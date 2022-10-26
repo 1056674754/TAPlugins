@@ -83,7 +83,7 @@ void UPolygonProcess::FixOpenAssetAsync(TArray<UStaticMesh*> StaticMeshs, int32 
 		FTransform Transform = StaticActor->GetActorTransform();
 		TSharedPtr<OpenAssetProcess, ESPMode::ThreadSafe> OpenAsset = MakeShareable(new OpenAssetProcess());
 		OpenAsset->FAsyncCalDelegate.AddThreadSafeSP(OpenAsset.ToSharedRef(), &OpenAssetProcess::CalculateResult);
-		//ÓÉÓÚÄ³Ğ©Çé¿ö, ActorÊÇ»¹Î´´´½¨µÄ, ËùÒÔ²»ÄÜÖ±½Ó´ÓActor»ñµÃStaticMesh
+		//ç”±äºæŸäº›æƒ…å†µ, Actoræ˜¯è¿˜æœªåˆ›å»ºçš„, æ‰€ä»¥ä¸èƒ½ç›´æ¥ä»Actorè·å¾—StaticMesh
 		OpenAsset->StaticActor = StaticActor;
 		OpenAsset->StaticMesh = StaticMesh;
 		OpenAsset->DebugBox = DebugBox;
@@ -132,7 +132,7 @@ void OpenAssetProcess::CalculateResult()
 	CalculateOpenAssetTransform();
 	CalculateSafeTransform();
 	
-	//ÕâÊÇÎªÁËÒª°Ñ
+	//è¿™æ˜¯ä¸ºäº†è¦æŠŠ
 	TransformManager->TransformMap.Add(StaticActor, FixedTransform);
 	AsyncTask(ENamedThreads::GameThread, [&]()
 	{
@@ -373,7 +373,7 @@ void OpenAssetProcess::CalculateOpenAssetTransform()
 		}
 		StartTest = StartTest;
 		MaxTraceDistance = FMath::Max(float(20), float(MaxTraceDistance * .2));
-		//Èç¹ûËùÓĞµã¶¼ÔÚµØÃæÒÔÏÂÁË, ÄÇ¾ÍÍøÉÏÒÆ°Ñ.
+		//å¦‚æœæ‰€æœ‰ç‚¹éƒ½åœ¨åœ°é¢ä»¥ä¸‹äº†, é‚£å°±ç½‘ä¸Šç§»æŠŠ.
 		if (AboveGround == 0)
 		{
 			TransformDir = 1;

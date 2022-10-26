@@ -182,7 +182,7 @@ bool UFoliageConverter::GetCustomDataValue(UInstancedStaticMeshComponent* Instan
 	{
 		return false;
 	}
-	//²»ÖªµÀÎªÊ²Ã´Ô­±¾µÄº¯Êı¾ÓÈ»²»Æğ×÷ÓÃËùÒÔÖ»ÄÜÖØĞÂ×öÒ»¸öÁË
+	//ä¸çŸ¥é“ä¸ºä»€ä¹ˆåŸæœ¬çš„å‡½æ•°å±…ç„¶ä¸èµ·ä½œç”¨æ‰€ä»¥åªèƒ½é‡æ–°åšä¸€ä¸ªäº†
 	TArray<FInstancedStaticMeshInstanceData> PerInstanceSMData = InstanceStaticMesh->PerInstanceSMData;
 	int32 NumCustomDataFloats = InstanceStaticMesh->NumCustomDataFloats;
 	if (!PerInstanceSMData.IsValidIndex(InstanceIndex) || CustomDataIndex < 0 || CustomDataIndex >= NumCustomDataFloats)
@@ -221,7 +221,7 @@ bool UFoliageConverter::SetCustomDataValue(UInstancedStaticMeshComponent* Instan
 	InstanceStaticMesh->PerInstanceSMCustomData[InstanceIndex * InstanceStaticMesh->NumCustomDataFloats + CustomDataIndex] = CustomDataValue;
 
 	// Force recreation of the render data when proxy is created
-	//ÕâÀï²»ÖªµÀÎªÊ²Ã´¸üĞÂ²ÄÖÊ²»ÄÜÓÃ×Ô´øµÄº¯Êı, ±ØĞëÖ±½ÓĞ´++ ´íÎóÌáÊ¾Ã²ËÆÊÇÃ»ÓĞinclude
+	//è¿™é‡Œä¸çŸ¥é“ä¸ºä»€ä¹ˆæ›´æ–°æè´¨ä¸èƒ½ç”¨è‡ªå¸¦çš„å‡½æ•°, å¿…é¡»ç›´æ¥å†™++ é”™è¯¯æç¤ºè²Œä¼¼æ˜¯æ²¡æœ‰include
 	InstanceStaticMesh->InstanceUpdateCmdBuffer.NumEdits++;
 	InstanceStaticMesh->MarkRenderStateDirty();
 

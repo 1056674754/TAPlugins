@@ -35,15 +35,12 @@
 #include "uefast_line_detector.h"
 #include "MinVolumeSphere3.h"
 #include "MinVolumeBox3.h"
-
-#include "PolygonProcess.h"
-#include "Async/Async.h"
 #include "Math/TransformCalculus3D.h"
 
-//????ObjectTransform??????
-#define ObjectTransformType_Forward 0 //????????????x??, ???????, ????????????
-#define ObjectTransformType_Up 2 //????????????Z????·????????. ????????
-#define ObjectTransformType_ForwardFoliage_OverTarget 1 //???????????Z????0 Z?????????(0,0,1) ????????淨???Forward
+//创建ObjectTransform的类型
+#define ObjectTransformType_Forward 0 //这类物体面向x轴, 如爬山虎, 悬崖峭壁类资产
+#define ObjectTransformType_Up 2 //这列物体面向Z轴如路边景观岩石. 地下的落叶
+#define ObjectTransformType_ForwardFoliage_OverTarget 1 //选取的像素值的Z越接近0 Z方向就越接近(0,0,1) 以物体表面法线为Forward
 #define debug = 0
 
 using namespace std;
@@ -51,34 +48,7 @@ using namespace cv;
 using namespace ximgproc;
 using namespace UE::Geometry;
 
-//ScreenProcess::ScreenProcess(ASceneCapture2D* InSceneCapture, TArray<UStaticMesh*> InInputMeshs, FVector BoxExtent, FVector Center)
-//	: SceneCapture(InSceneCapture)
-//	, Meshs(InInputMeshs)
-//	, BoxExtent(BoxExtent)
-//	, Center(Center)
-//{
-//}
-FConsiderMesh::FConsiderMesh(UStaticMesh* StaticMesh)
-	: StaticMesh(StaticMesh)
-{
-	OriginalMesh = MakeShared<FDynamicMesh3>();
-	FMeshDescriptionToDynamicMesh Converter;
-	Converter.Convert(StaticMesh->GetMeshDescription(0), *OriginalMesh);
-}
-
-FConsiderMeshY::FConsiderMeshY(UStaticMesh* StaticMesh)
-	:FConsiderMesh(StaticMesh)
-{
-	//StaticMesh = StaticMesh;
-}
-
-
-//void FConsiderMesh::ProcessMesh()
-//{
-//
-//}
-
-bool UScreenGenerate::BoxAreaFoliageGenerate(ASceneCapture2D* SceneCapture, TArray<AActor*> PickActors, TArray<UStaticMesh*> InputMeshs, UTexture2D* ReferenceTextrue, float BlockGenerate, float DivideScale)
+bool UScreenGenerate::BoxAreaFoliageGenerate(ASceneCapture2D* SceneCapture, TArray<AActor*> PickActors, TArray<UStaticMesh*> InputMeshs, float BlockGenerate, float DivideScale)
 {
 	FVector Center, BoxExtent;
 	UGameplayStatics::GetActorArrayBounds(PickActors, true, Center, BoxExtent);
@@ -87,25 +57,25 @@ bool UScreenGenerate::BoxAreaFoliageGenerate(ASceneCapture2D* SceneCapture, TArr
 	{
 		return false;
 	}
-	//TSharedPtr<OpenAssetProcess, ESPMode::ThreadSafe> OpenAsset = MakeShareable(new OpenAssetProcess());
-	TSharedPtr<ScreenProcess, ESPMode::ThreadSafe> ColorData = MakeShareable(new ProcessFoliage());
-	TSharedPtr<SceneCalculate, ESPMode::ThreadSafe> SceneCalculator = MakeShareable(new SceneCalculate(ColorData));
-	ColorData->SceneCapture = SceneCapture;
-	ColorData->Meshs = InputMeshs;
-	ColorData->BoxExtent = BoxExtent;
-	ColorData->Center = Center;
-	ColorData->PickActors = PickActors;
-	ColorData->OutTexture = ReferenceTextrue;
-	ColorData->Block = BlockGenerate;
-	ColorData->DivdeSize = DivideScale;
-	ColorData->FCalDelegate.AddThreadSafeSP(ColorData.ToSharedRef(), &ScreenProcess::CalculateStaticMesh);
-	ColorData->FScenceCaptureCalDelegate.AddThreadSafeSP(SceneCalculator.ToSharedRef(), &SceneCalculate::Calculate);
-	SceneCalculator->Calculate();
-
-	return true;
+	TSharedPtr<ScreenProcess, ESPMode::ThreadSafe> ScenceProcesser = MakeShareable(new ProcessFoliage());
+	ScenceProcesser->FCalDelegate.AddThreadSafeSP(ScenceProcesser.ToSharedRef(), &ScreenProcess::CalculateStaticMesh);
+	ScenceProcesser->SceneCapture = SceneCapture;
+	ScenceProcesser->Meshs = InputMeshs;
+	ScenceProcesser->BoxExtent = BoxExtent;
+	ScenceProcesser->Center = Center;
+	ScenceProcesser->PickActors = PickActors;
+	ScenceProcesser->Block = BlockGenerate;
+	ScenceProcesser->DivdeSize = DivideScale;
+	if(ScenceProcesser->Setup())
+	{
+		auto AsyncTast = new FAutoDeleteAsyncTask<FAsyncTasksTemplate<ScreenProcess>>(ScenceProcesser);
+		AsyncTast->StartBackgroundTask();
+		return true;
+	}
+	return false;
 }
 
-bool UScreenGenerate::BoxAreaOpenAssetGenerate(ASceneCapture2D* SceneCapture, TArray<AActor*> PickActors, TArray<UStaticMesh*> InputMeshs, UTexture2D* ReferenceTextrue, float BlockGenerate, float DivideScale)
+bool UScreenGenerate::BoxAreaOpenAssetGenerate(ASceneCapture2D* SceneCapture, TArray<AActor*> PickActors, TArray<UStaticMesh*> InputMeshs, float BlockGenerate, float DivideScale)
 {
 	FVector Center, BoxExtent;
 	UGameplayStatics::GetActorArrayBounds(PickActors, true, Center, BoxExtent);
@@ -114,18 +84,16 @@ bool UScreenGenerate::BoxAreaOpenAssetGenerate(ASceneCapture2D* SceneCapture, TA
 	{
 		return false;
 	}
-	TSharedPtr<ScreenProcess, ESPMode::ThreadSafe> ColorData = MakeShareable(new ProcessOpenAsset());
-	TSharedPtr<SceneCalculate, ESPMode::ThreadSafe> SceneCalculator = MakeShareable(new SceneCalculate(ColorData));
-	ColorData->SceneCapture = SceneCapture;
-	ColorData->Meshs = InputMeshs;
-	ColorData->BoxExtent = BoxExtent;
-	ColorData->Center = Center;
-	ColorData->PickActors = PickActors;
-	ColorData->OutTexture = ReferenceTextrue;
-	ColorData->Block = BlockGenerate;
-	ColorData->Switch = 1;
-	ColorData->DivdeSize = DivideScale;
-	ColorData->ObjectScale = FVector::OneVector * float(FMath::FRandRange(1.1, 3.1));
+	TSharedPtr<ScreenProcess, ESPMode::ThreadSafe> ScenceProcesser = MakeShareable(new ProcessOpenAsset());
+	ScenceProcesser->FCalDelegate.AddThreadSafeSP(ScenceProcesser.ToSharedRef(), &ScreenProcess::CalculateStaticMesh);
+	ScenceProcesser->SceneCapture = SceneCapture;
+	ScenceProcesser->Meshs = InputMeshs;
+	ScenceProcesser->BoxExtent = BoxExtent;
+	ScenceProcesser->Center = Center;
+	ScenceProcesser->PickActors = PickActors;
+	ScenceProcesser->Block = BlockGenerate;
+	ScenceProcesser->DivdeSize = DivideScale;
+	ScenceProcesser->ObjectScale = FVector::OneVector * float(FMath::FRandRange(1.1, 3.1));
 
 	ASceneCaptureContainter* SceneCaptureContainter = nullptr;
 	TArray<AActor*> FindOutActors;
@@ -160,12 +128,14 @@ bool UScreenGenerate::BoxAreaOpenAssetGenerate(ASceneCapture2D* SceneCapture, TA
 		MeshOpenVertexMap.Add(StaticMesh, Vertices);
 	}
 	SceneCaptureContainter->MeshOpenVertexMap = MeshOpenVertexMap;
-	ColorData->MeshOpenVertexMap = MeshOpenVertexMap;
-	ColorData->FCalDelegate.AddThreadSafeSP(ColorData.ToSharedRef(), &ScreenProcess::CalculateStaticMesh);
-	ColorData->FScenceCaptureCalDelegate.AddThreadSafeSP(SceneCalculator.ToSharedRef(), &SceneCalculate::Calculate);
-	SceneCalculator->Calculate();
-
-	return true;
+	ScenceProcesser->MeshOpenVertexMap = MeshOpenVertexMap;
+	if(ScenceProcesser->Setup())
+	{
+		auto AsyncTast = new FAutoDeleteAsyncTask<FAsyncTasksTemplate<ScreenProcess>>(ScenceProcesser);
+		AsyncTast->StartBackgroundTask();
+		return true;
+	}
+	return false;
 }
 
 bool UScreenGenerate::BoxAreaLineFoliageGenerate(ASceneCapture2D* SceneCapture, TArray<AActor*> PickActors,
@@ -180,43 +150,30 @@ bool UScreenGenerate::BoxAreaLineFoliageGenerate(ASceneCapture2D* SceneCapture, 
 	{
 		return false;
 	}
-	TSharedPtr<ScreenProcess, ESPMode::ThreadSafe> ColorData = MakeShareable(new ProcessLineFoliage());
-	TSharedPtr<SceneCalculate, ESPMode::ThreadSafe> SceneCalculator = MakeShareable(new SceneCalculate(ColorData));
-	ColorData->SceneCapture = SceneCapture;
-	ColorData->Meshs = InputMeshs;
-	ColorData->BoxExtent = BoxExtent;
-	ColorData->Center = Center;
-	ColorData->PickActors = PickActors;
-	//ColorData->OutTexture = ReferenceTextrue;
-	ColorData->Block = BlockGenerate;
-	ColorData->DivdeSize = DivideScale;
-	ColorData->DebugImg = DebugImg;
-
-	ColorData->Switch = 1;
-	ColorData->FCalDelegate.AddThreadSafeSP(ColorData.ToSharedRef(), &ScreenProcess::CalculateStaticMesh);
-	ColorData->FScenceCaptureCalDelegate.AddThreadSafeSP(SceneCalculator.ToSharedRef(), &SceneCalculate::Calculate);
-	SceneCalculator->Calculate();
-
-	return true;
-}
-
-//????????????????????????. ?????????????A????B  B?????A???????. ???????о??????. ????????????????.
-void SceneCalculate::Calculate()
-{
-	if (ColorData->Setup())
+	TSharedPtr<ScreenProcess, ESPMode::ThreadSafe> ScenceProcesser = MakeShareable(new ProcessLineFoliage());
+	ScenceProcesser->FCalDelegate.AddThreadSafeSP(ScenceProcesser.ToSharedRef(), &ScreenProcess::CalculateStaticMesh);
+	ScenceProcesser->SceneCapture = SceneCapture;
+	ScenceProcesser->Meshs = InputMeshs;
+	ScenceProcesser->BoxExtent = BoxExtent;
+	ScenceProcesser->Center = Center;
+	ScenceProcesser->PickActors = PickActors;
+	ScenceProcesser->Block = BlockGenerate;
+	ScenceProcesser->DivdeSize = DivideScale;
+	ScenceProcesser->DebugImg = DebugImg;
+	if(ScenceProcesser->Setup())
 	{
-		auto AsyncTast = new FAutoDeleteAsyncTask<FAsyncTasksTemplate<ScreenProcess>>(ColorData);
+		auto AsyncTast = new FAutoDeleteAsyncTask<FAsyncTasksTemplate<ScreenProcess>>(ScenceProcesser);
 		AsyncTast->StartBackgroundTask();
+		return true;
 	}
+	return false;
 }
-
 
 bool ScreenProcess::Setup()
 {	
 	CaptureSize = DivdeSize;
 	TArray<AActor*> FindOutActors;
 	UGameplayStatics::GetAllActorsOfClass(World, ASceneCaptureContainter::StaticClass(), FindOutActors);
-	//ASceneCaptureContainter* SceneCaptureContainter = nullptr;
 	if (FindOutActors.Num() == 0)
 	{
 		FActorSpawnParameters Params;
@@ -228,11 +185,11 @@ bool ScreenProcess::Setup()
 	{
 		SceneCaptureContainter = Cast<ASceneCaptureContainter>(FindOutActors[0]);
 	}
-	//???????????????????????.
+	//每次都得重新设定属性.
 	SceneCaptureContainter->PickActors = PickActors;
 	SceneCaptureContainter->DivdeSize = DivdeSize;
 	SceneCaptureContainter->Block = Block;
-	//????????transform
+	//获得transform
 	CaptureTransforms = SceneCaptureContainter->CaptureTransforms;
 	
 	if (CaptureTransforms.Num() == 0)
@@ -246,17 +203,17 @@ bool ScreenProcess::Setup()
 	
 	CurrentTransform = SceneCaptureContainter->CaptureTransforms.Pop();
 	TArray<TEnumAsByte<EObjectTypeQuery>> ObjectTypes{ UEngineTypes::ConvertToObjectType(ECollisionChannel::ECC_WorldDynamic), UEngineTypes::ConvertToObjectType(ECollisionChannel::ECC_WorldStatic) };
-	TArray<AActor*> ActorsToIgnore;
-	bool OverlapPickActor = false;
-	FHitResult OutHit;
-	//?????????????????. ?????????????????????. ????е???????????????????.
-	if (UKismetSystemLibrary::BoxTraceSingleForObjects(World, CurrentTransform.GetLocation(),
-	                                                   CurrentTransform.GetLocation(), FVector(0, DivdeSize, DivdeSize),
-	                                                   CurrentTransform.GetRotation().Rotator(), ObjectTypes, true,
-	                                                   ActorsToIgnore, EDrawDebugTrace::None, OutHit, true))
-	{
-		return false;
-	}
+	//TArray<AActor*> ActorsToIgnore;
+	//bool OverlapPickActor = false;
+	//FHitResult OutHit;
+	////?????????????????. ?????????????????????. ????е???????.
+	//if (UKismetSystemLibrary::BoxTraceSingleForObjects(World, CurrentTransform.GetLocation(),
+	//                                                   CurrentTransform.GetLocation(), FVector(0, DivdeSize, DivdeSize),
+	//                                                   CurrentTransform.GetRotation().Rotator(), ObjectTypes, true,
+	//                                                   ActorsToIgnore, EDrawDebugTrace::None, OutHit, true))
+	//{
+	//	return false;
+	//}
 	//?????????б??????Transform???????. ???????????д????.
 	CamIndex = -1;
 	for(int32 i = 0; i < SceneCaptureContainter->StoreCaptureTransforms.Num(); i++)
@@ -283,7 +240,7 @@ bool ScreenProcess::Setup()
 		DynamicMeshData.Add(Mesh, OriginalMesh);
 	}
 	SceneCaptureContainter->DynamicMeshData = DynamicMeshData;
-	//????ж??SceneCapture????????????Count??????
+	//如果有多个SceneCapture的话可以用这个Count来计数
 	SceneCaptureCount += 1;
 	TArray<FName> Tags;
 	Tags.Add(FName(TEXT("%d"), SceneCaptureCount));
@@ -308,7 +265,6 @@ bool ScreenProcess::Setup()
 	CurrentTransform = SceneCapture->GetActorTransform();
 	Root = CurrentTransform.GetLocation() - DirRight * CaptureSize / 2 + DirUp * CaptureSize / 2;
 
-
 	return true;
 }
 
@@ -320,15 +276,15 @@ void ScreenProcess::CalculateStaticMesh()
 
 void ScreenProcess::CacheImg()
 {
-	ColorArray2D.Empty();
+	SceneData.Empty();
 	SortIdx.Empty();
 	DepthArray.Empty();
 	for (int i = 0; i < Height; i++)
 	{
-		TArray<ColorCheck> ColumnArray;
+		TArray<SceneDataStruct> ColumnArray;
 		for (int n = 0; n < Width; n++)
 		{
-			ColorCheck HitColor;
+			SceneDataStruct HitColor;
 			float ScreenDepthMax = 10000;
 			FVector Start = Root + PixelSize / 2 - i * DirUp * PixelSize + n * DirRight * PixelSize;
 			FVector End = Start + Forward * ScreenDepthMax;
@@ -350,121 +306,16 @@ void ScreenProcess::CacheImg()
 				}
 				float Dot = FVector::DotProduct(-Forward, OutHit.Normal);
 				SortIdx.Add(FVector2i(i, n), Dot);
-				//DepthArray
 			}
 			ColumnArray.Add(HitColor);
 		}
-		ColorArray2D.Add(ColumnArray);
+		SceneData.Add(ColumnArray);
 	}
 	
 	SortIdx.ValueSort([](float A, float B) { return A > B; });
-	
 }
 
-//????????????
-bool ScreenProcess::ProcessImgFoliage()
-{
-	int32 index = FMath::RandRange(0, Meshs.Num() - 1);
-	CurrenStaticMesh = Meshs[index];
-	FBoxSphereBounds Bounds = CurrenStaticMesh->GetBounds();
-	FVector2D XZBound = FVector2D(Bounds.BoxExtent.X, Bounds.BoxExtent.Z);
-	ErodeBoundPixels = XZBound / PixelSize * RandomScale;
-	//??????overlap????. ??????????????????????. ???????????.
-	ErodeNumPixels = FMath::Min(ErodeBoundPixels.X, ErodeBoundPixels.Y);
-
-	OtherSides.Empty();
-	//CaptureTransforms.Empty();
-	//???????. ????????????ж?????????????????.
-	//????????????????????????н????????????.?????????????俪????. ??????????????SortIdx???趨.
-	for (TTuple<FVector2i, float>& Pair : SortIdx)
-	{
-		int32 i = Pair.Key.X;
-		int32 n = Pair.Key.Y;
-		if (ColorArray2D[i][n].Color.A <= 0 || ColorArray2D[i][n].Unchecked == false)
-		{
-			continue;
-		}
-		//???????????????
-		PickPixelArray.Empty();
-		FVector2i SearchIndex = FVector2i(i, n);
-		if (!CheckNormalImg(SearchIndex, .7))
-		{
-			continue;
-		}
-
-		FVector2i MaxPixel, MinPixel;
-		FVector2i PixelBound = PixelBox(MaxPixel, MinPixel);
-		//???????????С???????
-		if (PixelBound.X - ErodeNumPixels <= 0 || PixelBound.Y - ErodeNumPixels <= 0)
-		{
-			continue;
-		}
-		
-		//?????????????(??????????????????????????????????????ó????ε????)
-		TArray<FVector2i> PickPixelArrayErode = ScreenErode();
-		
-		//?????????????????????????????????.
-		if (PickPixelArrayErode.Num() == 0)
-		{
-			continue;
-		}
-
-		for (int32 c = 0; c < PickPixelArrayErode.Num(); c++)
-		{
-			PickPixelArrayErode.Swap(c, FMath::RandRange(0, PickPixelArrayErode.Num() - 1));
-		}
-		//???5?? ???????????;
-		for (int32 c = 0; c < FMath::Min(PickPixelArrayErode.Num(), 5); c++)
-		{
-			
-			//FVector2i PickPixel = PickPixelArrayErode[FMath::RandRange(0, PickPixelArrayErode.Num() - 1)];
-			FVector2i PickPixel = PickPixelArrayErode[c];
-
-			//???????????????????????. 
-			//float TargetZ = ColorArray2D[int32(PickPixel.X)][int32(PickPixel.Y)].Color.A;
-			//????涨?????????1050??500???????????????????
-			//if (TargetZ > 1050 || TargetZ < 500)
-			//{
-			//	continue;
-			//}
-
-			//??????????Transform, ??1????????????????Forward
-			ObjectTransform = CreateObjectTransform(PickPixel, ObjectTransformType_ForwardFoliage_OverTarget);
-
-			//??????????????, ??????峬?????????????false
-			Mat ObjectImg;
-			if (!RasterizeMesh(CurrenStaticMesh, ObjectTransform, ObjectImg))
-			{
-				continue;
-			}
-			Mat PickPixelImg = Array2DToMatBinarization(PickPixelArray);
-			TArray<FVector2i> Test = MatBinarizationToVector2D(ObjectImg);
-
-			//????overlap
-			if (OverlapImgCheck(PickPixelImg, ObjectImg))
-			{
-				continue;
-			}
-			FMeshData MeshData;
-			MeshData.Mesh = CurrenStaticMesh;
-			MeshData.Transform = ObjectTransform;
-			MeshData.Count = SceneCaptureCount;
-			SceneCaptureContainter->MeshData.Add(MeshData);
-			//FScenceCaptureCalDelegate.Broadcast();
-			//SceneCaptureComponent->ComponentTags.Add(FName(TEXT("Destory")));
-			
-			//???????????????
-			AsyncTask(ENamedThreads::GameThread, [&]()
-				{
-					SpawnStaticMesh();
-
-				});
-			break;
-		}
-	}
-	return true;
-}
-
+//覆盖可以生成植被的区域TODO
 bool ProcessFoliage::ProcessImg()
 {
 	int32 index = FMath::RandRange(0, Meshs.Num() - 1);
@@ -472,22 +323,21 @@ bool ProcessFoliage::ProcessImg()
 	FBoxSphereBounds Bounds = CurrenStaticMesh->GetBounds();
 	FVector2D XZBound = FVector2D(Bounds.BoxExtent.X, Bounds.BoxExtent.Z);
 	ErodeBoundPixels = XZBound / PixelSize * RandomScale;
-	//??????overlap????. ??????????????????????. ???????????.
+	//为了优化overlap计算. 我先把一定程度的像素给侵蚀掉. 然后再循环检测.
 	ErodeNumPixels = FMath::Min(ErodeBoundPixels.X, ErodeBoundPixels.Y);
 
 	OtherSides.Empty();
-	//CaptureTransforms.Empty();
-	//???????. ????????????ж?????????????????.
-	//????????????????????????н????????????.?????????????俪????. ??????????????SortIdx???趨.
+	//岛屿计算. 找到一个岛屿就判断一次是否可以放物体进去.
+	//因为需要按照像素法线与镜头法线夹角的顺序去检查图像.而不是从某个角落开始检查. 所以这里增添了SortIdx的设定.
 	for (TTuple<FVector2i, float>& Pair : SortIdx)
 	{
 		int32 i = Pair.Key.X;
 		int32 n = Pair.Key.Y;
-		if (ColorArray2D[i][n].Color.A <= 0 || ColorArray2D[i][n].Unchecked == false)
+		if (SceneData[i][n].Color.A <= 0 || SceneData[i][n].Unchecked == false)
 		{
 			continue;
 		}
-		//???????????????
+		//找到的岛屿数组序号
 		PickPixelArray.Empty();
 		FVector2i SearchIndex = FVector2i(i, n);
 		if (!CheckNormalImg(SearchIndex, .7))
@@ -497,16 +347,16 @@ bool ProcessFoliage::ProcessImg()
 
 		FVector2i MaxPixel, MinPixel;
 		FVector2i PixelBound = PixelBox(MaxPixel, MinPixel);
-		//???????????С???????
+		//如果放置区过小直接跳过
 		if (PixelBound.X - ErodeNumPixels <= 0 || PixelBound.Y - ErodeNumPixels <= 0)
 		{
 			continue;
 		}
 
-		//?????????????(??????????????????????????????????????ó????ε????)
+		//对图像做一个侵蚀(由于不能在选定物体之前确定侵蚀的情况所以无法使用长方形的侵蚀)
 		TArray<FVector2i> PickPixelArrayErode = ScreenErode();
 
-		//?????????????????????????????????.
+		//收缩完之后检测是否还有剩余像素.
 		if (PickPixelArrayErode.Num() == 0)
 		{
 			continue;
@@ -516,25 +366,17 @@ bool ProcessFoliage::ProcessImg()
 		{
 			PickPixelArrayErode.Swap(c, FMath::RandRange(0, PickPixelArrayErode.Num() - 1));
 		}
-		//???5?? ???????????;
+		//循环5次 没检测出来算了;
 		for (int32 c = 0; c < FMath::Min(PickPixelArrayErode.Num(), 5); c++)
 		{
 
-			//FVector2i PickPixel = PickPixelArrayErode[FMath::RandRange(0, PickPixelArrayErode.Num() - 1)];
-			FVector2i PickPixel = PickPixelArrayErode[c];
-
-			//???????????????????????. 
-			//float TargetZ = ColorArray2D[int32(PickPixel.X)][int32(PickPixel.Y)].Color.A;
-			//????涨?????????1050??500???????????????????
-			//if (TargetZ > 1050 || TargetZ < 500)
-			//{
-			//	continue;
-			//}
-
-			//??????????Transform, ??1????????????????Forward
+			FVector2i PickPixel = PickPixelArrayErode[FMath::RandRange(0, PickPixelArrayErode.Num() - 1)];
+			//FVector2i PickPixel = PickPixelArrayErode[c];
+			
+			//创建物体的Object
 			ObjectTransform = CreateObjectTransform(PickPixel, ObjectTransformType_ForwardFoliage_OverTarget);
 
-			//??????????????, ??????峬?????????????false
+			//光栅化物体为像素, 如果物体超出屏幕的话就会返回false
 			Mat ObjectImg;
 			if (!RasterizeMesh(CurrenStaticMesh, ObjectTransform, ObjectImg))
 			{
@@ -543,7 +385,7 @@ bool ProcessFoliage::ProcessImg()
 			Mat PickPixelImg = Array2DToMatBinarization(PickPixelArray);
 			TArray<FVector2i> Test = MatBinarizationToVector2D(ObjectImg);
 
-			//????overlap
+			//检测overlap
 			if (OverlapImgCheck(PickPixelImg, ObjectImg))
 			{
 				continue;
@@ -553,10 +395,9 @@ bool ProcessFoliage::ProcessImg()
 			MeshData.Transform = ObjectTransform;
 			MeshData.Count = SceneCaptureCount;
 			SceneCaptureContainter->MeshData.Add(MeshData);
-			//FScenceCaptureCalDelegate.Broadcast();
 			//SceneCaptureComponent->ComponentTags.Add(FName(TEXT("Destory")));
 
-			//???????????????
+			//回主线程生成物体
 			AsyncTask(ENamedThreads::GameThread, [&]()
 				{
 					SpawnStaticMesh();
@@ -567,33 +408,29 @@ bool ProcessFoliage::ProcessImg()
 	}
 	return true;
 }
-
+//根据直线生成植被
 bool ProcessLineFoliage::ProcessImg()
 {
-	Mat Img(Height, Width, CV_8UC1, Scalar::all(0));
-	LineImg = Img;
-	OutReferenceImg = Img;
-	//SceneCaptureContainter->ReferenceImg = Img;
 	int32 index = FMath::RandRange(0, Meshs.Num() - 1);
 	CurrenStaticMesh = Meshs[index];
 	FBoxSphereBounds Bounds = CurrenStaticMesh->GetBounds();
 	FVector2D XZBound = FVector2D(Bounds.BoxExtent.X, Bounds.BoxExtent.Z);
 	ErodeBoundPixels = XZBound / PixelSize * RandomScale;
-	//??????overlap????. ??????????????????????. ???????????.
+	//为了优化overlap计算. 我先把一定程度的像素给侵蚀掉. 然后再循环检测.
 	ErodeNumPixels = FMath::Min(ErodeBoundPixels.X, ErodeBoundPixels.Y);
 
 	OtherSides.Empty();
-	//???????. ????????????ж?????????????????.
-	//????????????????????????н????????????.?????????????俪????. ??????????????SortIdx???趨.
+	//岛屿计算. 找到一个岛屿就判断一次是否可以放物体进去.
+	//因为需要按照像素法线与镜头法线夹角的顺序去检查图像.而不是从某个角落开始检查. 所以这里增添了SortIdx的设定.
 	for (TTuple<FVector2i, float>& Pair : SortIdx)
 	{
 		int32 i = Pair.Key.X;
 		int32 n = Pair.Key.Y;
-		if (ColorArray2D[i][n].Color.A <= 0 || ColorArray2D[i][n].Unchecked == false)
+		if (SceneData[i][n].Color.A <= 0 || SceneData[i][n].Unchecked == false)
 		{
 			continue;
 		}
-		//???????????????
+		//找到的岛屿数组序号
 		PickPixelArray.Empty();
 		FVector2i SearchIndex = FVector2i(i, n);
 		if (!CheckNormalImg(SearchIndex, .7))
@@ -604,9 +441,9 @@ bool ProcessLineFoliage::ProcessImg()
 	}
 	
 	OutReferenceTArray = MatBinarizationToVector2D(OutReferenceImg);
-	//?й???PickPixelArraya??????
+	//有关于PickPixelArraya的可视化
 	SceneCaptureContainter->ReferenceImg1 = Array2DToMatBinarization(PickPixelArray);
-	//?й?????????????
+	//有关于直线检测的可视化
 	SceneCaptureContainter->ReferenceImg2 = OutReferenceImg;
 	AsyncTask(ENamedThreads::GameThread, [&]()
 		{
@@ -629,32 +466,32 @@ bool ProcessLineFoliage::ProcessImg()
 		});
 	return true;
 }
-
+//对开口资产进行放置TODO
 bool ProcessOpenAsset::ProcessImg()
 {
-	//?????????????????????????????. ??????????????????????????.
+	//因为开口资产包边的问题是要把边给包住. 所以只要不超出屏幕都是可以接受的.
 	int32 index = FMath::RandRange(0, Meshs.Num() - 1);
 	CurrenStaticMesh = Meshs[index];
 	FBoxSphereBounds Bounds = CurrenStaticMesh->GetBounds();
 	FVector2D XZBound = FVector2D(Bounds.BoxExtent.X, Bounds.BoxExtent.Y);
 	ErodeBoundPixels = XZBound / PixelSize * .8;
-	//??????overlap????. ??????????????????????. ???????????.
+	//为了优化overlap计算. 我先把一定程度的像素给侵蚀掉. 然后再循环检测.
 	ErodeNumPixels = FMath::Min(ErodeBoundPixels.X, ErodeBoundPixels.Y);
 
 	OtherSides.Empty();
 	//CaptureTransforms.Empty();
-	//???????. ????????????ж?????????????????.
-	//????????????????????????н????????????.?????????????俪????. ??????????????SortIdx???趨.
+	//岛屿计算. 找到一个岛屿就判断一次是否可以放物体进去.
+	//因为需要按照像素法线与镜头法线夹角的顺序去检查图像.而不是从某个角落开始检查. 所以这里增添了SortIdx的设定.
 	for (TTuple<FVector2i, float>& Pair : SortIdx)
 	{
 		int32 i = Pair.Key.X;
 		int32 n = Pair.Key.Y;
 		bool BoundingPixel = (FMath::Abs(i - Height/2) >= Height/2 - ErodeNumPixels) || (FMath::Abs(n - Width) >= Height / 2 - ErodeNumPixels);
-		if (ColorArray2D[i][n].Color.A <= 0 || ColorArray2D[i][n].Unchecked == false || BoundingPixel)
+		if (SceneData[i][n].Color.A <= 0 || SceneData[i][n].Unchecked == false || BoundingPixel)
 		{
 			continue;
 		}
-		//???????????????
+		//找到的岛屿数组序号
 		PickPixelArray.Empty();
 		FVector2i SearchIndex = FVector2i(i, n);
 		if (!CheckNormalImg(SearchIndex, .5))
@@ -664,17 +501,17 @@ bool ProcessOpenAsset::ProcessImg()
 
 		FVector2i MaxPixel, MinPixel;
 		FVector2i PixelBound = PixelBox(MaxPixel, MinPixel);
-		//???????????С???????
+		//如果放置区过小直接跳过
 		if (PixelBound.X - ErodeNumPixels <= 0 || PixelBound.Y - ErodeNumPixels <= 0)
 		{
 			//continue;
 		}
 
-		//?????????????????????????????. ??????????????????????????.
-		//?????????????(??????????????????????????????????????ó????ε????)
+		//因为开口资产包边的问题是要把边给包住. 所以只要不超出屏幕都是可以接受的.
+		//对图像做一个侵蚀(由于不能在选定物体之前确定侵蚀的情况所以无法使用长方形的侵蚀)
 		TArray<FVector2i> PickPixelArrayErode = PickPixelArray;
 
-		//?????????????????????????????????.
+		//收缩完之后随便选一个像素上面放东西就好了.
 		if (PickPixelArrayErode.Num() == 0)
 		{
 			continue;
@@ -687,34 +524,26 @@ bool ProcessOpenAsset::ProcessImg()
 
 
 		UE_LOG(LogTemp, Warning, TEXT("ThreadDone"));
-		//???5?? ???????????;
+		//循环5次 没检测出来算了;
 		for (int32 c = 0; c < FMath::Min(PickPixelArrayErode.Num(), 5); c++)
 		{
 
-			//FVector2i PickPixel = PickPixelArrayErode[FMath::RandRange(0, PickPixelArrayErode.Num() - 1)];
-			FVector2i PickPixel = PickPixelArrayErode[c];
+			FVector2i PickPixel = PickPixelArrayErode[FMath::RandRange(0, PickPixelArrayErode.Num() - 1)];
+			//FVector2i PickPixel = PickPixelArrayErode[c];
 
-			//???????????????????????. 
-			//float TargetZ = ColorArray2D[int32(PickPixel.X)][int32(PickPixel.Y)].Color.A;
-			//????涨?????????1050??500???????????????????
-			//if (TargetZ > 1050 || TargetZ < 500)
-			//{
-			//	continue;
-			//}
-
-			//??????????Transform, ??1????????????????Forward
+			//做一个物体的Transform, 模式1代表会以像素方向为Forward
 			ObjectTransform = CreateObjectTransform(PickPixel, ObjectTransformType_Up);
 			//FixOpenAssetTransform(ObjectTransform);
-			//??????????????, ??????峬?????????????false
+			//光栅化物体为像素, 如果物体超出屏幕的话就会返回false
 			Mat ObjectImg;
 			if (!RasterizeMesh(CurrenStaticMesh, ObjectTransform, ObjectImg))
 			{
 				continue;
 			}
 			Mat PickPixelImg = Array2DToMatBinarization(PickPixelArray);
-			TArray<FVector2i> Test = MatBinarizationToVector2D(ObjectImg);
+			//TArray<FVector2i> Test = MatBinarizationToVector2D(ObjectImg);
 
-			//?????????debug
+			//回主线程图片debug
 			Mat MinImg;
 			min(PickPixelImg, ObjectImg, MinImg);
 			SceneCaptureContainter->ReferenceImg1 = PickPixelImg;
@@ -734,7 +563,7 @@ bool ProcessOpenAsset::ProcessImg()
 				}
 			});
 			
-			//????overlap
+			//处理overlap
 			if (OverlapImgCheck(PickPixelImg, ObjectImg, .2))
 			{
 				continue;
@@ -744,14 +573,13 @@ bool ProcessOpenAsset::ProcessImg()
 			MeshData.Mesh = CurrenStaticMesh;
 			MeshData.Transform = ObjectTransform;
 			MeshData.Count = SceneCaptureCount;
-			MeshData.Actor = ColorArray2D[PickPixel.X][PickPixel.Y].TraceActor;
+			MeshData.Actor = SceneData[PickPixel.X][PickPixel.Y].TraceActor;
 			SceneCaptureContainter->MeshData.Add(MeshData);
-			//FScenceCaptureCalDelegate.Broadcast();
 			//SceneCaptureComponent->ComponentTags.Add(FName(TEXT("Destory")));
 
 			//SceneCaptureContainter->ReferenceImg1 = OutReferenceImg;
 			
-			//???????????????
+			//回主线程生成物体
 			AsyncTask(ENamedThreads::GameThread, [&]()
 				{
 					SpawnStaticMesh();
@@ -761,7 +589,7 @@ bool ProcessOpenAsset::ProcessImg()
 	}
 	return true;
 }
-//????????????????. ????????lamdba???????????????????. 
+
 void ScreenProcess::SpawnStaticMesh()
 {
 	TArray<AActor*> ContainerActors;
@@ -786,7 +614,7 @@ void ScreenProcess::SpawnStaticMesh()
 
 			StaticActor->GetStaticMeshComponent()->SetStaticMesh(MeshData.Mesh);
 			StaticActor->SetMobility(EComponentMobility::Movable);
-			//??????????????????.?????bug.???????attach
+			//ue4中attach会导致崩溃, ue5貌似还是蛮稳定的. 之前我猜测是不是由于attach导致运行效率变低, 但是实际上并不是.
 			StaticActor->AttachToActor(MeshData.Actor, FAttachmentTransformRules(EAttachmentRule::KeepWorld, false));
 			//OutActors.Add(StaticActor);
 
@@ -830,16 +658,12 @@ void ScreenProcess::SpawnStaticMesh()
 	}
 }
 
-//fld????? ??????????????
+//fld直线检测 结果是往边缘画线
 void ScreenProcess::LineDetection()
 {
-	Mat TestRefernceImg, color_edge;
-	TestRefernceImg = Array2DToMatBinarization(PickPixelArray);
-	Mat Test(Height, Width, CV_8UC1, Scalar::all(0));
-	Mat CannyImg;
-	TArray<FVector2i> TempCheck = MatBinarizationToVector2D(TestRefernceImg);
-
-	Mat image = TestRefernceImg;
+	Mat LineDetectImg;
+	LineDetectImg = Array2DToMatBinarization(PickPixelArray);
+	
 	int    length_threshold = 10;
 	float  distance_threshold = 1.41421356f;
 	double canny_th1 = 50.0;
@@ -854,15 +678,15 @@ void ScreenProcess::LineDetection()
 		canny_aperture_size,
 		do_merge);
 	TArray<Vec4f> lines_fld;
-	fld->detect(TestRefernceImg, lines_fld);
+	fld->detect(LineDetectImg, lines_fld);
 	for (size_t i = 0; i < lines_fld.Num(); i++)
 	{
 		FVector2D ScreenPosStart = FVector2D(FMath::Clamp(lines_fld[i][1], float(0.), float(Width)), FMath::Clamp(lines_fld[i][0], float(0.), float(Height)));
 		FVector2D ScreenPosEnd = FVector2D(FMath::Clamp(lines_fld[i][3], float(0.), float(Width)), FMath::Clamp(lines_fld[i][2], float(0.), float(Height)));
 
 		FVector WorldPosStart, WorldDirStart, WorldPosEnd;
-		WorldPosStart = ColorArray2D[ScreenPosStart.X][ScreenPosStart.Y].WorldPos;
-		WorldPosEnd = ColorArray2D[ScreenPosEnd.X][ScreenPosEnd.Y].WorldPos;
+		WorldPosStart = SceneData[ScreenPosStart.X][ScreenPosStart.Y].WorldPos;
+		WorldPosEnd = SceneData[ScreenPosEnd.X][ScreenPosEnd.Y].WorldPos;
 		FVector LineObjectDir = -(WorldDirStart + WorldPosEnd - 2 * SceneCapture->GetActorLocation()).GetSafeNormal();
 		FVector2D PixelDistFloat = ScreenPosStart - ScreenPosEnd;
 		FVector2i PixelDistInt = FVector2i(PixelDistFloat.X, PixelDistFloat.Y);
@@ -891,13 +715,7 @@ void ScreenProcess::LineDetection()
 			FVector2D ScreenPos = FMath::Lerp(ScreenPosStart, ScreenPosEnd, RandomLerp);
 			int32 PosRow = FMath::RoundToInt(ScreenPos.X);
 			int32 PosColumn = FMath::RoundToInt(ScreenPos.Y);
-			//?????????????????PickPixelArray??.????????????
-			if(!PickPixelArray.Find(FVector2i(PosRow,PosColumn)))
-			{
-				continue;
-			}
-			
-			AActor* TraceActor = ColorArray2D[PosRow][PosColumn].TraceActor;
+			AActor* TraceActor = SceneData[PosRow][PosColumn].TraceActor;
 			if (TraceActor)
 			{
 				TArray<FName> Tags = TraceActor->Tags;
@@ -906,47 +724,53 @@ void ScreenProcess::LineDetection()
 					continue;
 				}
 			}
-			//???????????????????????. ??????????????
-			if(PickActors.Find(TraceActor)<0)
+			float LineCheckThreashold = 50; 
+			//以下情况终止计算
+			if(!PickPixelArray.Find(FVector2i(PosRow,PosColumn))//查询下线的像素是否在PickPixelArray中.不在的话剔除出去
+				|| PickActors.Find(TraceActor)<0//直线检测的像素落在了自动生成的物体上面, 这里要避免叠加生成.
+				|| SceneData[PosRow][PosColumn].Color.A < LineCheckThreashold//距离相机平面过近不考虑. 因为相机平面与场景是有交接的.
+				//此处应该有一个判定是射线检测的反面不考虑. 但是射线检测想要知道法线的方向很困难
+				)
 			{
 				continue;
 			}
-			WorldPos = ColorArray2D[PosRow][PosColumn].WorldPos;
-			//?????????????????????????????????б????????????.
-			//?????????????????Χ??????.
-			//??????????????????ж????.
-				//1.??????????????????????, ????????Щ???. ?????????Щ???????????????????????????????????????????????.
-				//?????ж???????????????????????, ???????????ü????????浺??????????????.?????????Щ?仯
-				//???????Щ????, ????????????????????????????????. 
-				//2.???????????????????????????????????????????С. ?????ж???????????????
-				//????????????????仯??. ?????????????????????仯????????. ????????. С????????????.
 
-			//????????????????????????????????. 
+			WorldPos = SceneData[PosRow][PosColumn].WorldPos;
+			//由于二值化后的图像的边缘像素的相邻像素并没有被直线检测所考虑.
+			//所以这里就考虑一下周围像素了.
+			//以下有两种情况会导致判断错误.
+				//1.岛屿算法是根据深度和法线算岛屿, 所以会有一些误差. 比如由于某些特定角度相邻像素明明里的特别远但是岛屿算法把它们算作邻居.
+				//因此要判断该像素是否脱离其它像素过远, 事实上我认为该计算与上面岛屿计算的部分重复了.只是阔值有一些变化
+				//我做了一些操作, 但是以下操作依然不能完全杜绝情况的发生. 
+				//2.直线检测的像素在曲面且法线与摄像机方向点乘值的绝对值较小. 因此要判断该像素是否在曲面
+				//因为我需要知道像素的变化率. 如果它左右两个相邻像素变化率特别大的话. 应该是直角. 小的话应该是曲面.
+
+			//但是以下操作依然不能完全杜绝情况的发生. 
 			TArray<FVector2i> PosChecks;
 			PosChecks.Add(FVector2i(PosRow + 1, PosColumn));
 			PosChecks.Add(FVector2i(PosRow - 1, PosColumn));
 			PosChecks.Add(FVector2i(PosRow, PosColumn + 1));
 			PosChecks.Add(FVector2i(PosRow, PosColumn - 1));
-			ColorArray2D[PosRow][PosColumn].Unchecked = false;
-			ColorArray2D[PosRow][PosColumn].Picking = true;
+			SceneData[PosRow][PosColumn].Unchecked = false;
+			SceneData[PosRow][PosColumn].Picking = true;
 			PickPixelArray.Add(FVector2i(PosRow, PosColumn));
 			
 			bool Generate = true;
-			//??????
+			//检测深度
 			for (FVector2i PosCheck : PosChecks)
 			{
 				if (0 <= PosCheck.X && PosCheck.X < Height && 0 <= PosCheck.Y && PosCheck.Y < Height)
 				{
-					float DotForward = FVector::DotProduct(ColorArray2D[PosCheck.X][PosCheck.Y].Normal, -Forward);
-					//????н??С?ж????????. ??????????????.
+					float DotForward = FVector::DotProduct(SceneData[PosCheck.X][PosCheck.Y].Normal, -Forward);
+					//如果夹角过小判断会非常不准确. 还是给他个限定把.
 					if (DotForward < .15)
 					{
 						Generate = false;
 						continue;
 					}
-					//???????????????????仯
+					//深度测试应该要结合上法线的变化
 					float FixedDepthThreshold = PixelSize / DotForward + 20;
-					float DistanceDiffer = FMath::Abs((ColorArray2D[PosCheck.X][PosCheck.Y].WorldPos - ColorArray2D[PosRow][PosColumn].WorldPos).Size());
+					float DistanceDiffer = FMath::Abs((SceneData[PosCheck.X][PosCheck.Y].WorldPos - SceneData[PosRow][PosColumn].WorldPos).Size());
 					if (DistanceDiffer > FixedDepthThreshold)
 					{
 						Generate = false;
@@ -958,17 +782,17 @@ void ScreenProcess::LineDetection()
 			{
 				continue;
 			}
-			//?????仯??
+			//检测法线变化率
 			TArray<float> DotForwards;
 			for (FVector2i PosCheck : PosChecks)
 			{
 				if (0 <= PosCheck.X && PosCheck.X < Height && 0 <= PosCheck.Y && PosCheck.Y < Height)
 				{
-					float DotForward = FVector::DotProduct(ColorArray2D[PosCheck.X][PosCheck.Y].Normal, -Forward);
+					float DotForward = FVector::DotProduct(SceneData[PosCheck.X][PosCheck.Y].Normal, -Forward);
 					DotForwards.Add(DotForward);
-					//???????????????????仯
+					//深度测试应该要结合上法线的变化
 				}
-				//????????????. ????????
+				//如果是在图片边缘. 直接不考虑
 				else
 				{
 					Generate = false;
@@ -992,11 +816,11 @@ void ScreenProcess::LineDetection()
 			MeshData.Mesh = CurrenStaticMesh;
 			MeshData.Transform = PlaceTransform;
 			MeshData.Count = SceneCaptureCount;
-			MeshData.Actor = ColorArray2D[PosRow][PosColumn].TraceActor;
+			MeshData.Actor = SceneData[PosRow][PosColumn].TraceActor;
 			SceneCaptureContainter->MeshData.Add(MeshData);
 		}
 
-		//????mat???????debug
+		//画在mat上是为了debug
 		float rho = lines_fld[i][0], theta = lines_fld[i][1];
 		Point pt1, pt2;
 		double a = cos(theta), b = sin(theta);
@@ -1026,53 +850,6 @@ void ScreenProcess::DrawDebugTexture(Mat Img, int32 index)
 	}
 
 }
-
-UStaticMesh* ScreenProcess::ProcessMeshs()
-{
-	//???????StaicMesh????????????????Threashold?????????????????????. ??????????λ??.
-	//?ò??????????????????????????. ???????????????. ?????С????????. ?????????????????.
-
-	int32 index = FMath::RandRange(0, Meshs.Num() - 1);
-	CurrenStaticMesh = Meshs[index];
-	FBoxSphereBounds Bounds = CurrenStaticMesh->GetBounds();
-	TSharedPtr<FDynamicMesh3> OriginalMesh = MakeShared<FDynamicMesh3>();
-	FMeshDescriptionToDynamicMesh Converter;
-	Converter.Convert(CurrenStaticMesh->GetMeshDescription(0), *OriginalMesh);
-	float MinHeight = Bounds.Origin.Z - Bounds.BoxExtent.Z;
-	float Threshold = 50.;
-	PickVertices.Empty();
-	for (int32 VerticeId : OriginalMesh->VertexIndicesItr())
-	{
-		FVector3d MeshVerticePos = OriginalMesh->GetVertex(VerticeId);
-		FVector VerticePos = FVector(MeshVerticePos.X, MeshVerticePos.Y, MeshVerticePos.Z);
-		if (VerticePos.Z < MinHeight + Threshold)
-		{
-			VerticePos.Z = 0.;
-			PickVertices.Add(VerticePos);
-		}
-	}
-
-	PolyVertIndices.Empty();
-	ConvexHull2D::ComputeConvexHullLegacy(PickVertices, PolyVertIndices);
-	ConvexCenter = FVector(0, 0, 0);
-	for (int32 PolyVertIndice : PolyVertIndices)
-	{
-		ConvexCenter += PickVertices[PolyVertIndice];
-	}
-	ConvexCenter /= PickVertices.Num() * 1.;
-
-	return CurrenStaticMesh;
-}
-
-//FConsiderMesh::FConsiderMesh(UStaticMesh* StaticMesh)
-//	: StaticMesh(StaticMesh)
-//{
-//	
-//	OriginalMesh = MakeShared<FDynamicMesh3>();
-//	FMeshDescriptionToDynamicMesh Converter;
-//	Converter.Convert(StaticMesh->GetMeshDescription(0), *OriginalMesh);
-//}
-
 
 bool FConsiderMeshZ::ProcessMesh()
 {
@@ -1190,16 +967,18 @@ bool FConsiderMeshY::ProcessMesh()
 
 void ASceneCaptureContainter::GenerateTransforms()
 {
-	//??????????pickactors??bound???????????????????, ???????????. ?о?????????box???????????????. ????Щ????, ???????????????????????, ??????????pickactors??bound??????????????Χ.
+	//我发现直接用pickactors的bound作为摄像机的可生成区域, 生成的也太多了.
+	//感觉还不如用box作为生成区域算了. 因为某些区域, 比如我只想检测城镇内部的生成,
+	//但是如果使用pickactors的bound的话会检测到城镇的外围.
 	FVector Center = SourceCenter;
 	FVector BoxExtent = SourceExtent;
 	//UGameplayStatics::GetActorArrayBounds(PickActors, true, Center, BoxExtent);
 	FVector OrigPos = Center - BoxExtent * ExtentMult;
 	FVector Size = BoxExtent * ExtentMult;
-	//???????????????
+	//这里是生成多个角度
 	TArray<FVector> Dirs;
 	TSet<FVector> DirSet;
-	FVector DirTest = FVector::ZeroVector;//DirTest?????????????????????????????0, ???????0 ?????????????????????????
+	FVector DirTest = FVector::ZeroVector;//DirTest用来测试生成出来的方向加一起是不是0, 如果不是0 那么某个方向产生的物体就会特别多
 	float DirDivide = 2;
 	
 	for (int32 i = 0; i < DirDivide * 2 + 1; i++)
@@ -1208,14 +987,14 @@ void ASceneCaptureContainter::GenerateTransforms()
 		{
 			for (int32 c = 0; c < DirDivide * 2 + 1; c++)
 			{
-				//???????????????
+				//暂时不检测物体的底部
 				if (c / DirDivide - 1 > .2)
 				{
 					continue;
 				}
 				float RandomAngleRangeMult = FMath::FRandRange(0.1, 0.2);
 				FVector RandomVector = FMath::VRandCone(FVector(0, 0, 1), 360, 360);
-				//??????.????????
+				//为了测试.暂时先不搞
 				FVector Dir = (FVector(i / DirDivide - 1, n / DirDivide - 1, 0) + RandomVector * RandomAngleRangeMult).GetSafeNormal();
 				DirSet.Add(Dir);
 				DirTest += Dir;
@@ -1224,9 +1003,10 @@ void ASceneCaptureContainter::GenerateTransforms()
 	}
 	Dirs = DirSet.Array();
 	DirTest = DirTest.GetSafeNormal();
-	//????????transform
+	//收集相机的transform
 	if (CaptureTransforms.Num() == 0)
 	{
+		//我要用一个片检测相机视野是否与场景产生过多overlap. 产生碰撞的话就意味着相机的拍摄也是与物体穿插的
 		UObject* loadObj = StaticLoadObject(UStaticMesh::StaticClass(), NULL, TEXT("StaticMesh'/TAToolsPlugin/Plane.Plane'"));
 		UStaticMesh* PlaneStatic = nullptr;
 		if (loadObj != nullptr)
@@ -1237,8 +1017,11 @@ void ASceneCaptureContainter::GenerateTransforms()
 		AStaticMeshActor* PlaneStaticActor = GetWorld()->SpawnActor<AStaticMeshActor>(FVector::ZeroVector, FRotator::ZeroRotator, Params);
 		PlaneStaticActor->GetStaticMeshComponent()->SetStaticMesh(PlaneStatic);
 		PlaneStaticActor->SetMobility(EComponentMobility::Movable);
-		PlaneStaticActor->SetActorHiddenInGame(true);
-		FVector PlaneScale = FVector(DivdeSize, DivdeSize, DivdeSize) * 2;
+		//PlaneStaticActor->SetActorHiddenInGame(true);
+		TArray<FName> PlaneTags;
+		PlaneTags.Add(FName(TEXT("SAuto")));
+		PlaneStaticActor->Tags = PlaneTags;
+		
 		for (int32 i = 0; i < Size.X / DivdeSize + 2; i++)
 		{
 			for (int32 n = 0; n < Size.Y / DivdeSize + 2; n++)
@@ -1252,30 +1035,36 @@ void ASceneCaptureContainter::GenerateTransforms()
 					for (FVector Dir : Dirs)
 					{
 
+
+						
+						FVector PlaneScale = FVector(DivdeSize, DivdeSize, DivdeSize) * .01 * 0.1; //这里把片缩小十倍是不希望碰撞检测过大的区域. 不然没得生成了. 
 						float RandomDist = FMath::FRandRange(0, DivdeSize * 0.2);
 						FVector RandomVector = FMath::VRandCone(FVector(0, 0, 1), 360, 360);
 						FVector RandomDir = FMath::VRandCone(FVector(0, 0, 1), 360, 360);
 						FVector Pos = FVector(i, n, c) * DivdeSize + OrigPos + RandomVector * RandomDist;
-						FRotator Rot = UKismetMathLibrary::MakeRotFromX((Dir + RandomDir * .3).GetSafeNormal());
-						FTransform PlaneTransform = UKismetMathLibrary::MakeTransform(Pos, Rot, PlaneScale);
+						FRotator Rot = FRotationMatrix::MakeFromX((Dir + RandomDir * .3).GetSafeNormal()).Rotator();
+						FTransform PlaneTransform = FTransform(Rot, Pos, PlaneScale);
+						
 						PlaneStaticActor->SetActorTransform(PlaneTransform);
+						
 						TArray<TEnumAsByte<EObjectTypeQuery>> ObjectTypes{ UEngineTypes::ConvertToObjectType(ECollisionChannel::ECC_WorldDynamic), UEngineTypes::ConvertToObjectType(ECollisionChannel::ECC_WorldStatic)};
 						TArray<AActor*> ActorsToIgnore;
 						TArray<AActor*> OverlapOutActors;
 						bool OverlapPickActor = false;
 						FHitResult OutHit;
-						//?????????????????. ?????????????????????. ????е???????????????????.
-						//???boxtrace???????????????planecomponent????.
+						//boxtrace的速度不及planecomponent碰撞检测. 而且还差好多.
 						// if (UKismetSystemLibrary::BoxTraceSingleForObjects(
 						// 	GetWorld(), Pos, Pos, FVector(0, DivdeSize, DivdeSize), Rot, ObjectTypes, true,
 						// 	ActorsToIgnore, EDrawDebugTrace::None, OutHit, true))
 						// {
 						// 	continue;
 						// }
+						
 						if(UKismetSystemLibrary::ComponentOverlapActors(PlaneStaticActor->GetStaticMeshComponent(), PlaneStaticActor->GetStaticMeshComponent()->GetRelativeTransform(), ObjectTypes, nullptr, ActorsToIgnore, OverlapOutActors))
 						{
 							for (AActor* CheckActor : OverlapOutActors)
 							{
+								//讲道理直接给场景里的物体打标签再判断就好了.并不需要find. 不过性能瓶颈并不在这里.
 								if (PickActors.Find(CheckActor))
 								{
 									OverlapPickActor = true;
@@ -1288,14 +1077,14 @@ void ASceneCaptureContainter::GenerateTransforms()
 							}
 						}
 						
-						//????????????????????????, ????е??????transform??????????????
+						//检测一下相机前方远处有没有物体, 如果有的话就把该transform加入进检测序列中
 						FVector Start = Pos;
 						FVector End = Start + Dir * ScreenDepthMax;
 						if (UKismetSystemLibrary::LineTraceSingle(GetWorld(), Start, End, ETraceTypeQuery::TraceTypeQuery1, true, ActorsToIgnore, EDrawDebugTrace::None, OutHit, true))
 						{
 							if (PickActors.Find(OutHit.GetActor()) >= 0 && OutHit.Distance > 200 && OutHit.Distance > 1300)
 							{
-								//?z????????????????
+								//檢查一下是否上面是地表
 								End = Start + FVector(0,0,111111);
 								if(UKismetSystemLibrary::LineTraceSingle(GetWorld(), Start, End, ETraceTypeQuery::TraceTypeQuery1, true, ActorsToIgnore, EDrawDebugTrace::None, OutHit, true))
 								{
@@ -1311,11 +1100,12 @@ void ASceneCaptureContainter::GenerateTransforms()
 				}
 			}
 		}
-		//?????????????????λ??????. ????Ч??????.????
+		//如果打乱了数组速度会变得非常慢.
 		//for (int32 i = 0; i < CaptureTransforms.Num(); i++)
 		//{
 		//	CaptureTransforms.Swap(i, FMath::RandRange(0, CaptureTransforms.Num() - 1));
 		//}
+		PlaneStaticActor->Destroy();
 	}
 }
 
@@ -1351,46 +1141,46 @@ void ASceneCaptureContainter::GenerateBlockBox()
 }
 
 
-bool ScreenProcess::CalculateErodePixelNum()
-{
-	ErodeBoundMax = FVector2D(-999999, -99999);
-	ErodeBoundMin = FVector2D(999999, 999999);
-	float MaxLength = 0.;
-	for (int32 PolyVertIndice : PolyVertIndices)
-	{
-		if ((PickVertices[PolyVertIndice] - ConvexCenter).Size() > MaxLength)
-		{
-			MaxLength = PickVertices[PolyVertIndice].Size();
-		}
-		if (PickVertices[PolyVertIndice].X > ErodeBoundMax.X)
-		{
-			ErodeBoundMax.X = PickVertices[PolyVertIndice].X;
-		}
-		if (PickVertices[PolyVertIndice].Y > ErodeBoundMax.Y)
-		{
-			ErodeBoundMax.Y = PickVertices[PolyVertIndice].Y;
-		}
-		if (PickVertices[PolyVertIndice].X < ErodeBoundMin.X)
-		{
-			ErodeBoundMin.X = PickVertices[PolyVertIndice].X;
-		}
-		if (PickVertices[PolyVertIndice].Y < ErodeBoundMin.Y)
-		{
-			ErodeBoundMin.Y = PickVertices[PolyVertIndice].Y;
-		}
-	}
-	//??????????????????????????????????. ?????????????????????????
-	//int32 ErodeNumPixels = floor(MaxLength / PixelSize);
-	ErodeBoundPixels = (ErodeBoundMax - ErodeBoundMin) / PixelSize / 2 * RandomScale;
-	ErodeBoundPixels = FVector2D(floor(ErodeBoundPixels.X), floor(ErodeBoundPixels.Y));
-	ErodeNumPixels = floor(FMath::Min(ErodeBoundPixels.X, ErodeBoundPixels.Y));
-
-	if (ErodeNumPixels == 0)
-	{
-		return false;
-	}
-	return true;
-}
+// bool ScreenProcess::CalculateErodePixelNum()
+// {
+// 	ErodeBoundMax = FVector2D(-999999, -99999);
+// 	ErodeBoundMin = FVector2D(999999, 999999);
+// 	float MaxLength = 0.;
+// 	for (int32 PolyVertIndice : PolyVertIndices)
+// 	{
+// 		if ((PickVertices[PolyVertIndice] - ConvexCenter).Size() > MaxLength)
+// 		{
+// 			MaxLength = PickVertices[PolyVertIndice].Size();
+// 		}
+// 		if (PickVertices[PolyVertIndice].X > ErodeBoundMax.X)
+// 		{
+// 			ErodeBoundMax.X = PickVertices[PolyVertIndice].X;
+// 		}
+// 		if (PickVertices[PolyVertIndice].Y > ErodeBoundMax.Y)
+// 		{
+// 			ErodeBoundMax.Y = PickVertices[PolyVertIndice].Y;
+// 		}
+// 		if (PickVertices[PolyVertIndice].X < ErodeBoundMin.X)
+// 		{
+// 			ErodeBoundMin.X = PickVertices[PolyVertIndice].X;
+// 		}
+// 		if (PickVertices[PolyVertIndice].Y < ErodeBoundMin.Y)
+// 		{
+// 			ErodeBoundMin.Y = PickVertices[PolyVertIndice].Y;
+// 		}
+// 	}
+// 	//??????????????????????????????????. ?????????????????????????
+// 	//int32 ErodeNumPixels = floor(MaxLength / PixelSize);
+// 	ErodeBoundPixels = (ErodeBoundMax - ErodeBoundMin) / PixelSize / 2 * RandomScale;
+// 	ErodeBoundPixels = FVector2D(floor(ErodeBoundPixels.X), floor(ErodeBoundPixels.Y));
+// 	ErodeNumPixels = floor(FMath::Min(ErodeBoundPixels.X, ErodeBoundPixels.Y));
+//
+// 	if (ErodeNumPixels == 0)
+// 	{
+// 		return false;
+// 	}
+// 	return true;
+// }
 
 
 
@@ -1400,7 +1190,7 @@ bool ScreenProcess::CheckNormalImg(FVector2i SearchIndex, float NormalThreshold)
 	int32 PosColumn = SearchIndex.Y;
 	TArray<FVector2i> SearchIndexs;
 	SearchIndexs.Add(SearchIndex);
-	FVector InputNormal = ColorArray2D[PosRow][PosColumn].Normal;
+	FVector InputNormal = SceneData[PosRow][PosColumn].Normal;
 	FVector AvgNormal = FVector::ZeroVector;
 	FVector AvgLocation = FVector::ZeroVector;
 	int32 PickCount = 0;
@@ -1413,20 +1203,20 @@ bool ScreenProcess::CheckNormalImg(FVector2i SearchIndex, float NormalThreshold)
 		PosRow = SearchIndex.X;
 		PosColumn = SearchIndex.Y;
 		if (//FMath::Abs(ColorArray2D[PosRow][PosColumn].Color.A - InputColor.A) < DepthThreshold && 
-			ColorArray2D[PosRow][PosColumn].Unchecked == false)
+			SceneData[PosRow][PosColumn].Unchecked == false)
 		{
 			continue;
 		}
 		//?????б??????????????????normal???????.
-		AvgNormal += ColorArray2D[PosRow][PosColumn].Normal;
-		AvgLocation += ColorArray2D[PosRow][PosColumn].WorldPos;
+		AvgNormal += SceneData[PosRow][PosColumn].Normal;
+		AvgLocation += SceneData[PosRow][PosColumn].WorldPos;
 		TArray<FVector2i> PosChecks;
 		PosChecks.Add(FVector2i(PosRow + 1, PosColumn));
 		PosChecks.Add(FVector2i(PosRow - 1, PosColumn));
 		PosChecks.Add(FVector2i(PosRow, PosColumn + 1));
 		PosChecks.Add(FVector2i(PosRow, PosColumn - 1));
-		ColorArray2D[PosRow][PosColumn].Unchecked = false;
-		ColorArray2D[PosRow][PosColumn].Picking = true;
+		SceneData[PosRow][PosColumn].Unchecked = false;
+		SceneData[PosRow][PosColumn].Picking = true;
 		PickPixelArray.Add(FVector2i(PosRow, PosColumn));
 		PickCount ++;
 		
@@ -1434,16 +1224,16 @@ bool ScreenProcess::CheckNormalImg(FVector2i SearchIndex, float NormalThreshold)
 		{
 			if (0 <= PosCheck.X && PosCheck.X < Height && 0 <= PosCheck.Y && PosCheck.Y < Height)
 			{
-				FVector Normal = ColorArray2D[PosCheck.X][PosCheck.Y].Normal;
+				FVector Normal = SceneData[PosCheck.X][PosCheck.Y].Normal;
 				float Dot = FVector::DotProduct(Normal, InputNormal);
-				float DotForward = FVector::DotProduct(ColorArray2D[PosCheck.X][PosCheck.Y].Normal, -Forward);
+				float DotForward = FVector::DotProduct(SceneData[PosCheck.X][PosCheck.Y].Normal, -Forward);
 
 				//???????????????????仯
 				float FixedDepthThreshold = PixelSize / DotForward + DepthThreshold;
 				
-				if (Dot > NormalThreshold && ColorArray2D[PosCheck.X][PosCheck.Y].Unchecked == true)
+				if (Dot > NormalThreshold && SceneData[PosCheck.X][PosCheck.Y].Unchecked == true)
 				{
-					if (FMath::Abs((ColorArray2D[PosCheck.X][PosCheck.Y].WorldPos - ColorArray2D[PosRow][PosColumn].WorldPos).Size()) < FixedDepthThreshold)
+					if (FMath::Abs((SceneData[PosCheck.X][PosCheck.Y].WorldPos - SceneData[PosRow][PosColumn].WorldPos).Size()) < FixedDepthThreshold)
 					{
 						SearchIndexs.Push(FVector2i(PosCheck.X, PosCheck.Y));
 					}
@@ -1460,7 +1250,7 @@ bool ScreenProcess::CheckNormalImg(FVector2i SearchIndex, float NormalThreshold)
 		float Dot = FVector::DotProduct(AvgNormal, -Forward);
 		if (Dot < NormalThreshold )
 		{
-			OtherSide OtherSideData;
+			OtherSideStruct OtherSideData;
 			OtherSideData.OtherSidePixels= PickPixelArray;
 			OtherSideData.Normal = AvgNormal;
 			OtherSides.Add(OtherSideData);
@@ -1525,22 +1315,22 @@ Mat ScreenProcess::Array2DToMatBinarization(TArray<FVector2i> ConvertTArray)
 	return Img;
 }
 
-Mat ScreenProcess::SceneDepthToMatBinarization()
-{
-	Mat Img(Height, Width, CV_32FC1, Scalar::all(0));
-
-	for (int32 i = 0; i < ColorArray2D.Num(); i++)
-	{
-		for (int32 n = 0; n < ColorArray2D[0].Num(); n++)
-		{
-			Img.at<uchar>(i, n) = ColorArray2D[i][n].Color.A;
-			//ptmp = Img.ptr<uchar>(i);
-			//ptmp[n] = 255;
-		}
-	}
-
-	return Img;
-}
+// Mat ScreenProcess::SceneDepthToMatBinarization()
+// {
+// 	Mat Img(Height, Width, CV_32FC1, Scalar::all(0));
+//
+// 	for (int32 i = 0; i < ColorArray2D.Num(); i++)
+// 	{
+// 		for (int32 n = 0; n < ColorArray2D[0].Num(); n++)
+// 		{
+// 			Img.at<uchar>(i, n) = ColorArray2D[i][n].Color.A;
+// 			//ptmp = Img.ptr<uchar>(i);
+// 			//ptmp[n] = 255;
+// 		}
+// 	}
+//
+// 	return Img;
+// }
 
 TArray<FVector2i> ScreenProcess::MatBinarizationToVector2D(Mat Img)
 {
@@ -1598,14 +1388,14 @@ FTransform ScreenProcess::CreateObjectTransform(FVector2i PickPixel, int32 Type)
 	Dirs.Add(FVector2i(-1, 0));
 	//?ó????2d????б????????????????????
 	FVector2i TarDir = FVector2i(0,0);
-	for (int32 d = 1; d < FMath::Max(ColorArray2D.Num(), ColorArray2D[0].Num()); d++)
+	for (int32 d = 1; d < FMath::Max(SceneData.Num(), SceneData[0].Num()); d++)
 	{
 		for (FVector2i Dir : Dirs)
 		{
 			FVector2i Pos = PickPixel + Dir * d;
 			if ((0 <= Pos.X && Pos.X < Height && 0 <= Pos.Y && Pos.Y < Height))
 			{
-				if (!ColorArray2D[Pos.X][Pos.Y].Picking)
+				if (!SceneData[Pos.X][Pos.Y].Picking)
 				{
 					TarDir = Dir;
 					break;
@@ -1626,33 +1416,33 @@ FTransform ScreenProcess::CreateObjectTransform(FVector2i PickPixel, int32 Type)
 	switch (Type)
 	{
 	default:
-	case ObjectTransformType_Forward://?????x????????????????
+	case ObjectTransformType_Forward://物体的x轴为相机方向的反方向
 		{
-			FVector ForwordDir = ColorArray2D[int32(PickPixel.X)][int32(PickPixel.Y)].Normal;
-			//?????????????Z?????淨?????. ????????????泯??.
+			FVector ForwordDir = SceneData[int32(PickPixel.X)][int32(PickPixel.Y)].Normal;
+			//该改动期望是资产Z朝表面法线方向. 而资产朝前的一面朝下.
 			FVector UpDir = FVector::CrossProduct(FVector::CrossProduct(FMath::VRandCone(FVector(0, 0, 1), RandomAngleRange, RandomAngleRange), ForwordDir), ForwordDir);
 			FRotator Rot = UKismetMathLibrary::MakeRotFromXZ(ForwordDir, UpDir);
-			FVector PlaceLocation = ColorArray2D[int32(PickPixel.X)][int32(PickPixel.Y)].WorldPos;
+			FVector PlaceLocation = SceneData[int32(PickPixel.X)][int32(PickPixel.Y)].WorldPos;
 			return FTransform(Rot, PlaceLocation, ObjectScale);
 		}
-	case ObjectTransformType_ForwardFoliage_OverTarget://???????????Z????0 Z?????????(0,0,1) ????????淨???Forward
+	case ObjectTransformType_ForwardFoliage_OverTarget://选取的像素值的Z越接近0 Z方向就越接近(0,0,1) 以物体表面法线为Forward
 		{
 			FVector RandomUp = FVector::CrossProduct(UKismetMathLibrary::RandomUnitVectorInEllipticalConeInDegrees(FVector(0, 0, 1), 360, 360), FVector(0,0,1));
 			FVector UpDir = (UKismetMathLibrary::VLerp(FVector(0, 0, 1), RandomUp, 1)).GetSafeNormal();
 
-			FVector ForwordDir = ColorArray2D[PickPixel.X][PickPixel.Y].Normal;
+			FVector ForwordDir = SceneData[PickPixel.X][PickPixel.Y].Normal;
 			UpDir = FVector::CrossProduct(FVector::CrossProduct(UpDir, ForwordDir), ForwordDir);
 			FRotator Rot = UKismetMathLibrary::MakeRotFromYZ(ForwordDir, UpDir);
-			FVector PlaceLocation = ColorArray2D[int32(PickPixel.X)][int32(PickPixel.Y)].WorldPos;
+			FVector PlaceLocation = SceneData[int32(PickPixel.X)][int32(PickPixel.Y)].WorldPos;
 			return FTransform(Rot, PlaceLocation,FVector::OneVector);
 		}
-	case ObjectTransformType_Up://Z????????????????, ??????????????
+	case ObjectTransformType_Up://Z轴为相机方向的反方向, 对应朝上的开口资源
 		{
-			FVector UpDir = ColorArray2D[int32(PickPixel.X)][int32(PickPixel.Y)].Normal;
-			//?????????????Z?????淨?????. ????????????泯??.
+			FVector UpDir = SceneData[int32(PickPixel.X)][int32(PickPixel.Y)].Normal;
+			//该改动期望是资产Z朝表面法线方向. 而资产朝前的一面朝下.
 			FVector ForwordDir = FVector::CrossProduct(UKismetMathLibrary::RandomUnitVectorInEllipticalConeInDegrees(FVector(0, 0, 1), RandomAngleRange, RandomAngleRange), UpDir);
 			FRotator Rot = UKismetMathLibrary::MakeRotFromXZ(ForwordDir, UpDir);
-			FVector PlaceLocation = ColorArray2D[int32(PickPixel.X)][int32(PickPixel.Y)].WorldPos;
+			FVector PlaceLocation = SceneData[int32(PickPixel.X)][int32(PickPixel.Y)].WorldPos;
 			return FTransform(Rot, PlaceLocation, ObjectScale);
 		}
 	}
@@ -1686,7 +1476,6 @@ TArray<FVector2i> ScreenProcess::ScreenErode()
 
 bool ScreenProcess::OverlapImgCheck(Mat UnLayoutImg, Mat ObjectImg, float OverlapThreashold)
 {
-	//????????С????????. ???????????..
 	Mat MinImg;
 	min(UnLayoutImg, ObjectImg, MinImg);
 	float CountOverlap = countNonZero(MinImg);
@@ -1716,7 +1505,7 @@ bool ScreenProcess::OverlapCheck(Mat Img, FVector2i PickPixel)
 	FVector2i MaxPos = PickPixel + FVector2i(int32(ErodeBoundPixels.X), int32(ErodeBoundPixels.Y));
 	if (MinPos.X < 0 || MinPos.Y < 0 || MaxPos.X > Width || MaxPos.Y > Height)
 	{
-		//??????屻???????????
+		//超出相机范围
 		return true;
 	}
 
@@ -1742,14 +1531,6 @@ bool ScreenProcess::OverlapCheck(Mat Img, FVector2i PickPixel)
 	return false;
 }
 
-FRotator ScreenProcess::RandomRotatorFromUpAxis(FVector Up)
-{
-	Up = Up.GetSafeNormal();
-	FVector Tangent = FVector::CrossProduct(UKismetMathLibrary::RandomUnitVectorInEllipticalConeInDegrees(FVector(0, 0, 1), 360, 360), Up);
-	return UKismetMathLibrary::MakeRotFromXZ(Tangent, Up);
-
-}
-
 bool ScreenProcess::RasterizeMesh(UStaticMesh* InMesh, FTransform& Transform, Mat& OutImg)
 {
 	//TSharedPtr<FDynamicMesh3> OriginalMesh = MakeShared<FDynamicMesh3>();
@@ -1764,8 +1545,6 @@ bool ScreenProcess::RasterizeMesh(UStaticMesh* InMesh, FTransform& Transform, Ma
 		OriginalMesh->GetTriVertices(TID, TriVs[0], TriVs[1], TriVs[2]);
 		vector<Point> TriPoints;
 		
-		//TArray<float> 
-		//float Pair = ScreenDepthMap[0];
 		for (FVector3d TriV : TriVs)
 		{
 			FVector Pos = FVector(TriV);
@@ -1779,10 +1558,10 @@ bool ScreenProcess::RasterizeMesh(UStaticMesh* InMesh, FTransform& Transform, Ma
 					return false;
 				}
 				TriPoints.push_back(Point(FMath::Max(ScreenPos.X,float(0.)), FMath::Max(ScreenPos.Y, float(0.))));
-				float PixelDepth = (ColorArray2D[ScreenPos.X][ScreenPos.Y].WorldPos - SceneCapture->GetActorLocation()).Size();
+				float PixelDepth = (SceneData[ScreenPos.X][ScreenPos.Y].WorldPos - SceneCapture->GetActorLocation()).Size();
 				float DepthDifference = ScreenDepth - PixelDepth;
 				float* Depth = ScreenDepthMap.Find(FVector2i(ScreenPos.X, ScreenPos.Y));
-				//????嵽??????????????????????????.
+				//取物体到相机的距离减去当前像素储存的深度的值.
 				if (Depth)
 				{
 					if (*Depth < DepthDifference)
@@ -1812,8 +1591,8 @@ bool ScreenProcess::RasterizeMesh(UStaticMesh* InMesh, FTransform& Transform, Ma
 	{
 		return false;
 	}
-	//?????????嵽???????????С???????????????????. ?????????????????
-	//?????????????????????????????????????????.????????????.
+	//如果目标物体到相机的距离大部分都小于屏幕空间捕捉到的像素的话. 就要把它移出来一部分
+	//如果直接这么做的话像那种有落差的情况就无法被照顾了.所以还是放弃把.
 	float FixedDepth = DepthfArray[int32(DepthArray.Num() * 0.5)];
 	if (FixedDepth > 0)
 	{
@@ -1834,66 +1613,9 @@ bool ScreenProcess::RasterizeMesh(UStaticMesh* InMesh, FTransform& Transform, Ma
 	return true;
 }
 
-//
-//
-//void UScreenGenerate::AsyncTest(FVector WorldTransform)
-//{
-//	//TSharedPtr<AsyncClass, ESPMode::ThreadSafe> AsyncInst = MakeShared<AsyncClass>();
-//	TSharedPtr<AsyncClass, ESPMode::ThreadSafe> AsyncInst = MakeShareable(new AsyncClass);
-//	//if (ColorData->Calculate())
-//	//{
-//	//	OutHDRValues = ColorData->OutHDRValues;
-//	//	OutActors = ColorData->OutActors;
-//	//	OutRT = ColorData->OutRT;
-//	//	return true;
-//	//}
-//	//else
-//	//{
-//	//	return false;
-//	//}
-//	AsyncInst->IntTest.Empty();
-//	AsyncInst->FCalDelegate.AddThreadSafeSP(AsyncInst.ToSharedRef(), &AsyncClass::AsyncTestFun);
-//	//AsyncInst->AsyncBind();
-//	//auto AsyncTest = new FAutoDeleteAsyncTask<FSimpleAsyncTasks>(AsyncInst);
-//	//AsyncTest->StartBackgroundTask();
-//	//AsyncInst->FCalDelegate.BindUObject(AsyncInst, &AsyncClass::AsyncTestFun);
-//	
-//	
-//	//AsyncInst->FCalDelegate.AddUObject
-//
-//	//FPlatformProcess::Sleep(5);
-//	//AsyncInst->IntTest.Empty();
-//
-//	//FPlatformProcess::Sleep(5);
-//	//AsyncInst->IntTest.Empty();
-//	//FCalDelegate.Broadcast();
-//}
-//
-//void AsyncClass::AsyncTestFun()
-//{
-//	//FPlatformProcess::Sleep(3);
-//	for (int32 i = 0; i < IntTest.Num()*10; i++)
-//	{
-//		FActorSpawnParameters Params;
-//		GWorld->SpawnActor<AActor>(FVector(0, 0, 0), FRotator(0, 0, 0), Params);
-//	}
-//}
-//
-//void AsyncClass::AsyncBind()
-//{
-//	//FCalDelegate.AddRaw(this, &AsyncClass::AsyncTestFun);
-//	FPlatformProcess::Sleep(5);
-//}
-//
-//
 bool UScreenGenerate::ProjectWorldToScreen_General(ASceneCapture2D* InSceneCapture, int32 Width, int32 Height, FVector WorldPos, FVector2D& ScreenPos, float& ScreenDepth)
 {
 	USceneCaptureComponent2D* CaptureComponent = InSceneCapture->GetCaptureComponent2D();
-	//Capture2D->UpdateSceneCaptureContents(GWorld->Scene);
-	//check(CaptureComponent);
-	//UTextureRenderTarget2D* TextureRenderTarget = CaptureComponent->TextureTarget;
-	//int32 Width = TextureRenderTarget->SizeX;
-	//int32 Height = TextureRenderTarget->SizeX;
 
 	FTransform Transform = CaptureComponent->GetComponentToWorld();
 	FVector ViewLocation = Transform.GetTranslation();
@@ -2002,11 +1724,6 @@ bool UScreenGenerate::ProjectWorldToScreen_General(ASceneCapture2D* InSceneCaptu
 bool UScreenGenerate::DeProjectScreenToWorld_General(ASceneCapture2D* InSceneCapture, int32 Width, int32 Height, FVector2D ScreenPos, float ScreenDepth, FVector& WorldPos, FVector& WorldDir)
 {
 	USceneCaptureComponent2D* CaptureComponent = InSceneCapture->GetCaptureComponent2D();
-	//Capture2D->UpdateSceneCaptureContents(GWorld->Scene);
-	//check(CaptureComponent);
-	//UTextureRenderTarget2D* TextureRenderTarget = CaptureComponent->TextureTarget;
-	//int32 Width = TextureRenderTarget->SizeX;
-	//int32 Height = TextureRenderTarget->SizeX;
 
 	FTransform Transform = CaptureComponent->GetComponentToWorld();
 	FVector ViewLocation = Transform.GetTranslation();

@@ -11,33 +11,6 @@
 
 DECLARE_MULTICAST_DELEGATE(FAsyncCalDelegate);
 
-//template<typename OpType>
-class TATOOLSPLUGIN_API FSimpleAsyncTasks : public FNonAbandonableTask
-{
-	friend class FAutoDeleteAsyncTask<FSimpleAsyncTasks>;
-public:
-	FSimpleAsyncTasks(TSharedPtr<ScreenProcess, ESPMode::ThreadSafe>& Inclass) :
-		ThreadClass(Inclass)
-	{
-	}
-	
-protected:
-
-	TSharedPtr<ScreenProcess, ESPMode::ThreadSafe> ThreadClass;
-
-	void DoWork()
-	{
-		ThreadClass->FCalDelegate.Broadcast();
-
-	}
-
-
-	FORCEINLINE TStatId GetStatId() const
-	{
-		RETURN_QUICK_DECLARE_CYCLE_STAT(FSimpleAsyncTasks, STATGROUP_ThreadPoolAsyncTasks);
-	}
-};
-
 template<typename OpType>
 class TATOOLSPLUGIN_API FAsyncTasksTemplate : public FNonAbandonableTask
 {

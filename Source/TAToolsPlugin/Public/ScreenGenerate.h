@@ -15,6 +15,7 @@
 #include "Engine/SceneCapture2D.h"
 #include "PolygonProcess.h"
 #include "TATools_Async.h"
+#include "Async/Async.h"
 //#include "Public/UObject/ConstructorHelpers.h"
 
 
@@ -39,8 +40,7 @@ class ASceneCaptureContainter;
 class AStaticMeshActor;
 class AsyncAble;
 DECLARE_MULTICAST_DELEGATE(FCalDelegate);
-DECLARE_MULTICAST_DELEGATE(FCalGenerateStaticDelegate);
-DECLARE_MULTICAST_DELEGATE(FScenceCaptureCalDelegate);
+
 //DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLiveLinkTickDelegate, float, DeltaTime);
 
 
@@ -59,11 +59,10 @@ public:
 
 
 	UFUNCTION(BlueprintCallable, Category = ScreenGenerate)
-	static bool BoxAreaFoliageGenerate(ASceneCapture2D* SceneCapture, TArray<AActor*> PickActors, TArray<UStaticMesh*> InputMeshs, UTexture2D*
-	                                   ReferenceTextrue, float BlockGenerate, float DivideScale = 1000);
+	static bool BoxAreaFoliageGenerate(ASceneCapture2D* SceneCapture, TArray<AActor*> PickActors, TArray<UStaticMesh*> InputMeshs, float BlockGenerate, float DivideScale = 1000);
 	
 	UFUNCTION(BlueprintCallable, Category = ScreenGenerate)
-	static bool BoxAreaOpenAssetGenerate(ASceneCapture2D* SceneCapture, TArray<AActor*> PickActors, TArray<UStaticMesh*> InputMeshs, UTexture2D* ReferenceTextrue, float BlockGenerate, float DivideScale = 5000);
+	static bool BoxAreaOpenAssetGenerate(ASceneCapture2D* SceneCapture, TArray<AActor*> PickActors, TArray<UStaticMesh*> InputMeshs, float BlockGenerate, float DivideScale = 5000);
 
 
 	UFUNCTION(BlueprintCallable, Category = ScreenGenerate)
@@ -88,25 +87,18 @@ class TATOOLSPLUGIN_API ScreenProcess
 {
 public:
 	ScreenProcess(){}
-
-	UClass* SceneCaptureClass;
+	
 	UWorld* World = GWorld;
 	ASceneCapture2D* SceneCapture;
 	TArray<AActor*> PickActors;
 	TArray<UStaticMesh*> Meshs;
 	FVector BoxExtent;
 	FVector Center;
-	UTextureRenderTarget2D* Texture2D;
-	UTexture2D* OutTexture;
 	ASceneCaptureContainter* SceneCaptureContainter = nullptr;
-	USceneCaptureComponent2D* SceneCaptureComponent;
-	ASceneCapture2D* CurrentCapture;
 	int32 SceneCaptureCount;
 
 	FCalDelegate FCalDelegate;
-	FCalGenerateStaticDelegate FCalGenerateStaticDelegate;
-	FScenceCaptureCalDelegate FScenceCaptureCalDelegate;
-	struct ColorCheck
+	struct SceneDataStruct
 	{
 		FLinearColor Color = FLinearColor(0, 0, 0, 0);
 		bool Unchecked = true;
@@ -115,39 +107,29 @@ public:
 		FVector Normal = FVector::ZeroVector;
 		FVector WorldPos = FVector::ZeroVector;
 		int32 Item = -1;
-		//float Dist = 0;
 	};
 
-	struct OtherSide
+	struct OtherSideStruct
 	{
 		TArray<FVector2i> OtherSidePixels;
 		FVector Normal;
 	};
 	UStaticMesh* CurrenStaticMesh;
-	Mat OutReferenceImg;//Õâ¸öÍ¼ÔÚDrawTextureÖÐ»á±»Êä³ö ÓÃÓÚdebug
-	Mat OutReferenceImg2;//Õâ¸öÍ¼ÔÚDrawTextureÖÐ»á±»Êä³ö ÓÃÓÚdebug±¸ÓÃ
-	Mat DepthImg;
+	Mat OutReferenceImg;//è¿™ä¸ªå›¾åœ¨DrawTextureä¸­ä¼šè¢«è¾“å‡º ç”¨äºŽdebug
+	Mat OutReferenceImg2;//è¿™ä¸ªå›¾åœ¨DrawTextureä¸­ä¼šè¢«è¾“å‡º ç”¨äºŽdebugå¤‡ç”¨
 	TArray<FVector2i> OutReferenceTArray;
-	Mat LineImg;
 	TMap<UStaticMesh*, TSharedPtr<FDynamicMesh3>> DynamicMeshData;
 	TMap<UStaticMesh*, TArray<FVector>> MeshOpenVertexMap;
 	TMap<FVector2i, float> SortIdx;
-	TArray<TArray<ColorCheck>> ColorArray2D;
+	TArray<TArray<SceneDataStruct>> SceneData;
 
-	TArray<OtherSide> OtherSides;
-	TArray<FVector> PickVertices;
-	TArray<FVector> MeshCheckPoss;
-	TArray<FVector> PlaceModelPos;
+	TArray<OtherSideStruct> OtherSides;
 	TArray<FVector2i> PickPixelArray;
 	TArray<FVector2i> DepthArray;
-	TArray<int32> PolyVertIndices;
 	TArray<FTransform> CaptureTransforms;
-
-	TArray<FLinearColor> OutHDRValues;
-	TArray<AStaticMeshActor*> OutActors;
-	UTextureRenderTarget2D* OutRT;
+	
 	FTransform CurrentTransform;
-	FVector ConvexCenter, Forward, DirRight, DirUp, Root;
+	FVector Forward, DirRight, DirUp, Root;
 	FVector ObjectScale = FVector::OneVector;
 	FVector2D ErodeBoundMax;
 	FVector2D ErodeBoundMin;
@@ -156,7 +138,6 @@ public:
 	int32 Height = 0;
 	int32 Width = 0;
 	int32 ErodeNumPixels = 0;
-	int32 Switch = 0;
 	int32 CamIndex = -1;
 	FTransform ObjectTransform;
 	float PixelSize = 0;
@@ -167,7 +148,6 @@ public:
 	bool DebugImg = false;
 
 	virtual bool ProcessImg() = 0;
-	//virtual void CalculateResult() = 0;
 	void DoCalculate()
 	{
 		FCalDelegate.Broadcast();
@@ -176,31 +156,16 @@ public:
 	bool Setup();
 
 	void CacheImg();
-
-	bool CalculateErodePixelNum();
-
-	UStaticMesh* ProcessMeshs();
-
-	bool ProcessImgFoliage();
-
-	// bool ProcessLineFoliage();
-
-	//bool CheckImg(FVector2i SearchIndex);
-
+	
 	bool CheckNormalImg(FVector2i SearchIndex, float NormalThreshold);
 
 	void CheckCollision(AStaticMeshActor* StaticActor);
 
-	//static bool FindBound(FVector2i SourcePixel, FVector2i PixelBound, FVector2i ScreenBound, TArray<FVector2i> PickPixelArray);
 	FVector2i PixelBox(FVector2i& Max, FVector2i& Min);
-
-	/*FVector2i FindDirToSingActorBound(TArray<TArray<ColorCheck>> ColorArray2D, FVector2i PickPixel);*/
 
 	FTransform CreateObjectTransform(FVector2i PickPixel, int32 Type);
 
 	TArray<FVector2i> ScreenErode();
-
-	//TArray<FVector2i> ScreenErodeRectangle( TArray<FVector2i> BoundPixelArray, FVector2i ErodeBound);
 
 	bool OverlapImgCheck(Mat UnLayoutImg, Mat ObjectImg, float OverlapThreashold = 0);
 
@@ -210,13 +175,7 @@ public:
 
 	Mat Array2DToMatBinarization(TArray<FVector2i> ConvertTArray);
 
-	Mat SceneDepthToMatBinarization();
-
-	FRotator RandomRotatorFromUpAxis(FVector Up);
-
 	bool RasterizeMesh(UStaticMesh* InMesh, FTransform& Transform, Mat& OutImg);
-
-	//Mat RasterizeConvex(UStaticMesh* InMesh, FTransform Transform = FTransform());
 
 	void CalculateStaticMesh();
 
@@ -225,10 +184,6 @@ public:
 	void LineDetection();
 
 	void DrawDebugTexture(Mat Img, int32 index);
-
-	//void CalculateOBB();
-
-
 
 };
 
@@ -255,30 +210,11 @@ public:
 	virtual ~ProcessOpenAsset(){};
 };
 
-class TATOOLSPLUGIN_API SceneCalculate
-{
-public:
-
-	SceneCalculate(TSharedPtr<ScreenProcess, ESPMode::ThreadSafe>& ColorData)
-		:ColorData(ColorData)
-	{}
-
-	FScenceCaptureCalDelegate FScenceCaptureCalDelegate;
-	void Calculate();
-protected:
-	TSharedPtr<ScreenProcess, ESPMode::ThreadSafe> ColorData;
-
-
-	//void AsyncTestFun();
-};
-
 class TATOOLSPLUGIN_API FConsiderMesh
 {
 public:
 	FConsiderMesh(UStaticMesh* StaticMesh);
 
-	//int32 Height, Width;
-	// 
 	FVector ConvexCenter;
 	FVector2D ErodeBoundMax;
 	FVector2D ErodeBoundMin;
@@ -294,58 +230,16 @@ public:
 
 class TATOOLSPLUGIN_API FConsiderMeshZ : public FConsiderMesh
 {
-	FConsiderMeshZ(UStaticMesh* StaticMesh);
 	virtual bool ProcessMesh() override;
-	//virtual ~FConsiderMeshZ(){};
 };
 
 
 class TATOOLSPLUGIN_API FConsiderMeshY : public FConsiderMesh
 {
-	FConsiderMeshY(UStaticMesh* StaticMesh);
 	virtual bool ProcessMesh() override;
 };
 
 
-
-
-//class TATOOLSPLUGIN_API FSimpleAsyncTasks : public FNonAbandonableTask
-//{
-//	friend class FAutoDeleteAsyncTask<FSimpleAsyncTasks>;
-//public:
-//	FSimpleAsyncTasks(TSharedPtr<AsyncClass, ESPMode::ThreadSafe>& TestClass) :
-//		TestClass(TestClass)
-//	{
-//	}
-//
-//protected:
-//	//	//int32 MyInput1;
-//	//	//int32 MyInput2;
-//	//	//FVector WorldPos;
-//	TSharedPtr<AsyncClass, ESPMode::ThreadSafe> TestClass;
-//
-//	void DoWork();
-//
-//	FORCEINLINE TStatId GetStatId() const
-//	{
-//		RETURN_QUICK_DECLARE_CYCLE_STAT(FSimpleAsyncTasks, STATGROUP_ThreadPoolAsyncTasks);
-//	}
-//};
-//
-//USTRUCT()
-//struct FTileSetImportMapping
-//{
-//	GENERATED_USTRUCT_BODY()
-//
-//		UPROPERTY()
-//		FString SourceName;
-//
-//	UPROPERTY()
-//		TWeakObjectPtr<class UPaperTileSet> ImportedTileSet;
-//
-//	UPROPERTY()
-//		TWeakObjectPtr<class UTexture> ImportedTexture;
-//};
 USTRUCT()
 struct FMeshData
 {
@@ -431,11 +325,4 @@ public:
 
 
 };
-//template <typename RealType> struct TMinVolumeBox3Internal;
-//class OBBVolume3d : public FMinVolumeBox3d
-//{
-//public:
-//	//OBBVolume3d() {}
-//	bool GeneralSolve(TArray<FVector> InArray);
-//};
-//
+
