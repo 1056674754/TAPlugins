@@ -200,7 +200,7 @@ bool ScreenProcess::Setup()
 	{
 		return false;
 	}
-	
+	//实际上没必要pop. 直接用一个index去记录访问到哪个transform就好了.
 	CurrentTransform = SceneCaptureContainter->CaptureTransforms.Pop();
 	TArray<TEnumAsByte<EObjectTypeQuery>> ObjectTypes{ UEngineTypes::ConvertToObjectType(ECollisionChannel::ECC_WorldDynamic), UEngineTypes::ConvertToObjectType(ECollisionChannel::ECC_WorldStatic) };
 	//TArray<AActor*> ActorsToIgnore;
@@ -300,6 +300,7 @@ void ScreenProcess::CacheImg()
 				HitColor.WorldPos = OutHit.Location;
 				HitColor.Item = OutHit.Item;
 				HitColor.Unchecked = false;
+				//这里如果换成判断被检测的物体是否有某个标签会不会更好呢?
 				if (PickActors.Find(HitColor.TraceActor)>=0 && OutHit.Distance > 100)
 				{
 					HitColor.Unchecked = true;
