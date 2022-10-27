@@ -189,19 +189,17 @@ bool ScreenProcess::Setup()
 	SceneCaptureContainter->PickActors = PickActors;
 	SceneCaptureContainter->DivdeSize = DivdeSize;
 	SceneCaptureContainter->Block = Block;
-	//获得transform
-	CaptureTransforms = SceneCaptureContainter->CaptureTransforms;
 	
-	if (CaptureTransforms.Num() == 0)
+	if (SceneCaptureContainter->StoreCaptureTransforms.Num() == 0)
 	{
 		SceneCaptureContainter->GenerateTransforms();
 	}
-	if(CaptureTransforms.Num() == 0)
+	if(SceneCaptureContainter->StoreCaptureTransforms.Num() == 0)
 	{
 		return false;
 	}
-	//实际上没必要pop. 直接用一个index去记录访问到哪个transform就好了.
-	CurrentTransform = SceneCaptureContainter->CaptureTransforms.Pop();
+	CurrentTransform = SceneCaptureContainter->StoreCaptureTransforms[SceneCaptureContainter->CurrentTransformIndex];
+	SceneCaptureContainter->CurrentTransformIndex = FMath::Fmod(SceneCaptureContainter->CurrentTransformIndex + 1, SceneCaptureContainter->StoreCaptureTransforms.Num());
 	TArray<TEnumAsByte<EObjectTypeQuery>> ObjectTypes{ UEngineTypes::ConvertToObjectType(ECollisionChannel::ECC_WorldDynamic), UEngineTypes::ConvertToObjectType(ECollisionChannel::ECC_WorldStatic) };
 	//TArray<AActor*> ActorsToIgnore;
 	//bool OverlapPickActor = false;
@@ -252,7 +250,8 @@ bool ScreenProcess::Setup()
 	else
 	{
 		RTSize = 128;
-	}	Width = RTSize;
+	}
+	Width = RTSize;
 	Height = RTSize;
 	//CaptureSize *= 1.5;
 	PixelSize = CaptureSize / RTSize;
@@ -480,7 +479,6 @@ bool ProcessOpenAsset::ProcessImg()
 	ErodeNumPixels = FMath::Min(ErodeBoundPixels.X, ErodeBoundPixels.Y);
 
 	OtherSides.Empty();
-	//CaptureTransforms.Empty();
 	//岛屿计算. 找到一个岛屿就判断一次是否可以放物体进去.
 	//因为需要按照像素法线与镜头法线夹角的顺序去检查图像.而不是从某个角落开始检查. 所以这里增添了SortIdx的设定.
 	for (TTuple<FVector2i, float>& Pair : SortIdx)
@@ -1005,7 +1003,7 @@ void ASceneCaptureContainter::GenerateTransforms()
 	Dirs = DirSet.Array();
 	DirTest = DirTest.GetSafeNormal();
 	//收集相机的transform
-	if (CaptureTransforms.Num() == 0)
+	if (StoreCaptureTransforms.Num() == 0)
 	{
 		//我要用一个片检测相机视野是否与场景产生过多overlap. 产生碰撞的话就意味着相机的拍摄也是与物体穿插的
 		UObject* loadObj = StaticLoadObject(UStaticMesh::StaticClass(), NULL, TEXT("StaticMesh'/TAToolsPlugin/Plane.Plane'"));
@@ -1094,7 +1092,7 @@ void ASceneCaptureContainter::GenerateTransforms()
 										continue;
 									}
 								}
-								CaptureTransforms.Add(FTransform(Rot, Pos, FVector::OneVector));
+								StoreCaptureTransforms.Add(FTransform(Rot, Pos, FVector::OneVector));
 							}
 						}
 					}
@@ -1102,11 +1100,12 @@ void ASceneCaptureContainter::GenerateTransforms()
 			}
 		}
 		//如果打乱了数组速度会变得非常慢.
-		//for (int32 i = 0; i < CaptureTransforms.Num(); i++)
+		//for (int32 i = 0; i < StoreCaptureTransforms.Num(); i++)
 		//{
-		//	CaptureTransforms.Swap(i, FMath::RandRange(0, CaptureTransforms.Num() - 1));
+		//	StoreCaptureTransforms.Swap(i, FMath::RandRange(0, StoreCaptureTransforms.Num() - 1));
 		//}
 		PlaneStaticActor->Destroy();
+		CurrentTransformIndex = 0;
 	}
 }
 
@@ -1140,7 +1139,6 @@ void ASceneCaptureContainter::GenerateBlockBox()
 		InstanceBlockMesh->AddInstanceWorldSpace(AddTransform);
 	}
 }
-
 
 // bool ScreenProcess::CalculateErodePixelNum()
 // {
@@ -1182,8 +1180,6 @@ void ASceneCaptureContainter::GenerateBlockBox()
 // 	}
 // 	return true;
 // }
-
-
 
 bool ScreenProcess::CheckNormalImg(FVector2i SearchIndex, float NormalThreshold)
 {
@@ -1315,23 +1311,6 @@ Mat ScreenProcess::Array2DToMatBinarization(TArray<FVector2i> ConvertTArray)
 
 	return Img;
 }
-
-// Mat ScreenProcess::SceneDepthToMatBinarization()
-// {
-// 	Mat Img(Height, Width, CV_32FC1, Scalar::all(0));
-//
-// 	for (int32 i = 0; i < ColorArray2D.Num(); i++)
-// 	{
-// 		for (int32 n = 0; n < ColorArray2D[0].Num(); n++)
-// 		{
-// 			Img.at<uchar>(i, n) = ColorArray2D[i][n].Color.A;
-// 			//ptmp = Img.ptr<uchar>(i);
-// 			//ptmp[n] = 255;
-// 		}
-// 	}
-//
-// 	return Img;
-// }
 
 TArray<FVector2i> ScreenProcess::MatBinarizationToVector2D(Mat Img)
 {

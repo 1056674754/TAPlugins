@@ -126,7 +126,6 @@ public:
 	TArray<OtherSideStruct> OtherSides;
 	TArray<FVector2i> PickPixelArray;
 	TArray<FVector2i> DepthArray;
-	TArray<FTransform> CaptureTransforms;
 	
 	FTransform CurrentTransform;
 	FVector Forward, DirRight, DirUp, Root;
@@ -280,9 +279,6 @@ class TATOOLSPLUGIN_API ASceneCaptureContainter : public AActor
 public:
 	UPROPERTY(BlueprintReadWrite, Category = "CubeAttrib")
 	USceneComponent* Root;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CubeAttrib")
-	TArray<FTransform> CaptureTransforms;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CubeAttrib")
 	TArray<FTransform> StoreCaptureTransforms;
@@ -303,6 +299,9 @@ public:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CubeAttrib")
 	TArray<AActor*> PickActors;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CubeAttrib")
+	int32 CurrentTransformIndex = 0;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CubeAttrib")
 	float DivdeSize = 0;
